@@ -1321,10 +1321,11 @@ function batchKinds(kind) {
 
 function gtpBatchModal() {
   const draft = entryModal.draft;
+  if (draft.previewing) return gtpBatchPreviewModal(draft);
   const kinds = batchKinds(draft.kind);
   const needVendor = kinds.includes('vendor');
   const picked = new Set(draft.picked.map(Number));
-  const rowHint = draft.vendor || (needVendor ? 'Vendor name' : 'Optional');
+  const rowHint = draft.vendor || 'Comment / Vendor';
   const rows = boqItems.filter(isMaterial).map((item) => {
     const open = kinds.filter((kind) => approvalRecord(item, kind).status !== 'Approved');
     const locked = open.length === 0;
@@ -1344,7 +1345,7 @@ function gtpBatchModal() {
           </span>
         </label>
         <span class="pick-status">${status}</span>
-        <input class="pick-vendor" type="text" data-vendor-sl="${item.slNo}" value="${esc(vendorValue)}" placeholder="${esc(rowHint)}" aria-label="Vendor for Sl ${item.slNo}" ${locked ? 'disabled' : ''} />
+        <input class="pick-vendor" type="text" data-vendor-sl="${item.slNo}" value="${esc(vendorValue)}" placeholder="${esc(rowHint)}" aria-label="Comment for Sl ${item.slNo}" ${locked ? 'disabled' : ''} />
       </div>
     `;
   }).join('');
@@ -1359,23 +1360,64 @@ function gtpBatchModal() {
       </div>
       <label>Letter no. <input name="letterNo" required placeholder="e.g. TE/MALDA/2026/014" value="${esc(draft.letterNo)}" /></label>
       <label>Letter date <input name="date" type="date" required value="${esc(draft.date)}" /></label>
-      <label class="span-2">Default vendor${needVendor ? '' : ' (optional)'} <input name="vendor" placeholder="Used for every ticked row left blank" value="${esc(draft.vendor)}" /></label>
+      <label class="span-2">Comment <input name="vendor" placeholder="Enter optional comment or default vendor for all ticked rows" value="${esc(draft.vendor)}" /></label>
       <div class="batch-toolbar span-all">
         <input type="search" class="pick-search" placeholder="Filter materials…" value="${esc(draft.filter)}" aria-label="Filter materials" />
         <button type="button" class="tiny" data-action="batch-all">Tick all shown</button>
         <button type="button" class="tiny" data-action="batch-none">Clear ticks</button>
       </div>
       <div class="pick-list span-all">
-        <div class="pick-head"><span>Material</span><span>Current status</span><span>Vendor (blank = default)</span></div>
+        <div class="pick-head"><span>Material</span><span>Current status</span><span>Comment / Vendor</span></div>
         ${rows || '<p class="pick-empty">No material items in the BOQ.</p>'}
         <p class="pick-empty filter-miss" hidden>No material matches the filter.</p>
       </div>
       <div class="batch-foot span-all">
         <span class="batch-count" data-count></span>
-        <button class="primary" type="submit" data-submit>Submit letter</button>
+        <button class="primary" type="submit" data-submit>Preview letter</button>
       </div>
       <p class="form-msg span-all"></p>
     </form>
+  `;
+}
+
+function gtpBatchPreviewModal(draft) {
+  const typeLabel = draft.kind === 'both' ? 'Vendor approval + GTP' : draft.kind === 'gtp' ? 'GTP submission' : 'Vendor approval';
+  const payloads = draft.payloads || [];
+  const uniqueSl = [...new Set(payloads.map((p) => p.itemSl))];
+
+  const rows = uniqueSl.map((sl) => {
+    const item = findItem(sl);
+    const itemPayloads = payloads.filter((p) => p.itemSl === sl);
+    const commentVal = itemPayloads[0]?.vendor || '—';
+    return `
+      <tr>
+        <td>${sl}</td>
+        <td class="desc" title="${esc(item?.description || '')}"><strong>${esc(materialName(item || { description: '' }))}</strong></td>
+        <td class="num">${qtyText(item?.loaQty || 0, item?.unit || '')}</td>
+        <td class="num">${surveyText(item)}</td>
+        <td>${esc(commentVal)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    ${modalTitle('Preview & Confirm Submission', `Review details for letter reference ${esc(draft.letterNo)} before submitting.`)}
+    <div style="background: rgba(0,0,0,0.03); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;" class="span-all">
+      <div><span class="meta">Letter No.</span><br><strong>${esc(draft.letterNo)}</strong></div>
+      <div><span class="meta">Letter Date</span><br><strong>${esc(isoToDmy(draft.date))}</strong></div>
+      <div><span class="meta">Submission Type</span><br><strong>${esc(typeLabel)}</strong></div>
+      <div><span class="meta">Materials Covered</span><br><strong>${uniqueSl.length} ${uniqueSl.length === 1 ? 'material' : 'materials'}</strong></div>
+      ${draft.vendor ? `<div class="span-all"><span class="meta">Comment / Default Vendor</span><br><span>${esc(draft.vendor)}</span></div>` : ''}
+    </div>
+
+    <div class="span-all batch-sheet" style="max-height: 250px; overflow-y: auto; margin-bottom: 1rem;">
+      ${table(['Sl', 'Material', numHead('LOA Qty'), numHead('Survey Qty'), 'Comment / Vendor'], rows, 5)}
+    </div>
+
+    <div class="actions span-all" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+      <button type="button" class="ghost" data-action="batch-cancel-preview">← Back to Edit</button>
+      <button type="button" class="primary" data-action="batch-confirm-submit">Confirm & Submit Letter</button>
+    </div>
   `;
 }
 
@@ -1973,6 +2015,17 @@ function onClick(event) {
     paint();
     return;
   }
+  if (action === 'batch-cancel-preview') {
+    if (entryModal && entryModal.draft) {
+      entryModal.draft.previewing = false;
+      paint();
+    }
+    return;
+  }
+  if (action === 'batch-confirm-submit') {
+    confirmSaveGtpBatch();
+    return;
+  }
   if (action === 'pay-bill') markBillPaid(button.dataset.id);
   if (action === 'verify-log') verifyLog(button.dataset.id);
   if (action === 'delete-boq') deleteBoq(Number(button.dataset.sl));
@@ -2167,7 +2220,7 @@ function updateBatchCount(form) {
   const submit = form.querySelector('[data-submit]');
   if (submit) {
     submit.disabled = count === 0;
-    submit.textContent = count ? `Submit letter for ${count} ${count === 1 ? 'item' : 'items'}` : 'Submit letter';
+    submit.textContent = count ? `Preview letter for ${count} ${count === 1 ? 'item' : 'items'}` : 'Preview letter';
   }
 }
 
@@ -2393,15 +2446,13 @@ async function saveGtpBatch(form) {
   }
   if (!draft.picked.length) return setMsg(form, 'Tick at least one material.');
   const payloads = [];
-  const missing = new Set();
   draft.picked.forEach((sl) => {
     const item = findItem(sl);
     if (!item || !isMaterial(item)) return;
-    const vendorName = String(draft.vendors[sl] || '').trim() || draft.vendor;
+    const vendorName = String(draft.vendors[sl] || '').trim() || draft.vendor || (user.name || 'Vendor');
     kinds.forEach((kind) => {
       const record = approvalRecord(item, kind);
       if (record.status === 'Approved') return;
-      if (kind === 'vendor' && !vendorName) missing.add(item.slNo);
       payloads.push({
         itemSl: item.slNo,
         kind,
@@ -2418,10 +2469,27 @@ async function saveGtpBatch(form) {
       });
     });
   });
-  if (missing.size) return setMsg(form, `Enter a vendor for Sl ${[...missing].join(', ')}, or fill the default vendor.`);
   if (!payloads.length) return setMsg(form, 'Every ticked material is already approved.');
   if (!requireName(form)) return;
-  if (!await finish(form, () => remote.saveApprovals(payloads))) return;
+  
+  entryModal.draft = {
+    ...draft,
+    previewing: true,
+    payloads
+  };
+  paint();
+}
+
+async function confirmSaveGtpBatch() {
+  if (!entryModal?.draft?.payloads) return;
+  const draft = entryModal.draft;
+  const payloads = draft.payloads;
+  try {
+    await remote.saveApprovals(payloads);
+  } catch (error) {
+    toast(error.message || 'Could not save submission');
+    return;
+  }
   payloads.forEach(({ itemSl, kind, ...fields }) => Object.assign(approvalRecord(findItem(itemSl), kind), fields));
   const count = new Set(payloads.map((row) => row.itemSl)).size;
   entryModal = null;
