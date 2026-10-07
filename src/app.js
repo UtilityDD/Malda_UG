@@ -285,7 +285,7 @@ function renderAuth() {
   return `
     <form class="auth-card" id="${signup ? 'form-signup' : 'form-login'}">
       <h1>${signup ? 'Create a login' : 'Sign in'}</h1>
-      <p>${signup ? 'The first person becomes Admin and loads the 36 BOQ lines. Later people stay inactive until Admin turns them on.' : 'Use the email and password Admin gave you.'}</p>
+      <p>${signup ? 'Enter your details to register a new account.' : 'Sign in to access the project register.'}</p>
       ${signup ? '<label>Name<input name="name" type="text" autocomplete="name" required /></label>' : ''}
       <label>Email<input name="email" id="auth-email" type="email" autocomplete="username" required /></label>
       <label>Password<input name="password" id="auth-password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required /></label>
