@@ -354,10 +354,10 @@ begin
       where item_sl = new.item_sl and kind = 'vendor' and status = 'Approved';
     select max(coalesce(approved_qty, item.loa_qty)) into gtp_qty from public.approvals
       where item_sl = new.item_sl and kind = 'gtp' and status = 'Approved';
-    if vendor_qty is null or gtp_qty is null then
-      raise exception 'Approve the vendor and the GTP before offering inspection';
+    if vendor_qty is null and gtp_qty is null then
+      raise exception 'Approve the vendor or the GTP before offering inspection';
     end if;
-    approved := least(vendor_qty, gtp_qty);
+    approved := coalesce(least(vendor_qty, gtp_qty), vendor_qty, gtp_qty);
     select coalesce(sum(qty), 0) into used from public.offers
       where item_sl = new.item_sl and status <> 'Rejected';
     if used + new.qty > approved then

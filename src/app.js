@@ -3336,13 +3336,23 @@ function officeName(className) {
 }
 
 function approvedBoqQty(item) {
+  if (!item) return 0;
   const vendorApprs = itemApprovals(item, 'vendor').filter((r) => r.status === 'Approved');
   const gtpDocs = itemApprovals(item, 'gtp').filter((r) => r.status === 'Approved');
-  if (!vendorApprs.length || !gtpDocs.length) return 0;
-  const vQty = Math.max(...vendorApprs.map((r) => Number(r.approvedQty) || Number(item.loaQty) || 0));
-  const gQty = Math.max(...gtpDocs.map((r) => Number(r.approvedQty) || Number(item.loaQty) || 0));
-  const stored = Math.min(vQty, gQty);
-  return stored > 0 ? stored : Number(item.loaQty) || 0;
+  if (!vendorApprs.length && !gtpDocs.length) return 0;
+  const getQty = (list) => {
+    if (!list.length) return 0;
+    const nums = list.map((r) => {
+      const q = Number(r.approvedQty);
+      return q > 0 ? q : Number(item.loaQty) || 0;
+    });
+    return Math.max(...nums);
+  };
+  const vQty = getQty(vendorApprs);
+  const gQty = getQty(gtpDocs);
+  if (vQty > 0 && gQty > 0) return Math.min(vQty, gQty);
+  const val = Math.max(vQty, gQty);
+  return val > 0 ? val : Number(item.loaQty) || 0;
 }
 
 function itemOffers(item) {
