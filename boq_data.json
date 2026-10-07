@@ -1,0 +1,326 @@
+[
+  {
+    "slNo": 1,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of SCADA RMU, 11 KV outdoor non-extensible 3-way (2 LBS +1 OG) for 630KVA DTR as per technical specifications, scope of works and approved drawings.",
+    "qty": 12.0,
+    "unit": "SET",
+    "rate": 809667.85,
+    "totalAmount": 9716014.2
+  },
+  {
+    "slNo": 2,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of SCADA RMU, 11 KV outdoor non-extensible 4-way (2 LBS +2 OG) for 630KVA DTR as per technical specifications, scope of works and approved drawings",
+    "qty": 18.0,
+    "unit": "SET",
+    "rate": 881751.8,
+    "totalAmount": 15871532.4
+  },
+  {
+    "slNo": 3,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  11 KV Grade 3 x 400 sq.mm  XLPE Cable as per technical specifications, scope of works and approved drawings",
+    "qty": 40.705,
+    "unit": "KM",
+    "rate": 2151847.64,
+    "totalAmount": 87590958.19
+  },
+  {
+    "slNo": 4,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  11 KV Grade 3 x 185 sq.mm  XLPE Cable as per technical specifications, scope of works and approved drawings",
+    "qty": 63.75,
+    "unit": "KM",
+    "rate": 1213366.16,
+    "totalAmount": 77352092.7
+  },
+  {
+    "slNo": 5,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  Indoor type Heat shrinkable end Termination Jointing kit for 11 KV, 3C x 400 sq.mm XLPE Cable as per technical specifications, scope of works and approved drawings",
+    "qty": 71.0,
+    "unit": "NOS",
+    "rate": 7403.76,
+    "totalAmount": 525666.96
+  },
+  {
+    "slNo": 6,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  Outdoor type Heat shrinkable end Termination Jointing kit for 11 KV, 3C x 400 sq.mm XLPE Cable as per technical specifications, scope of works and approved drawings",
+    "qty": 22.0,
+    "unit": "NOS",
+    "rate": 8884.52,
+    "totalAmount": 195459.44
+  },
+  {
+    "slNo": 7,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  Heat shrinkable Straight Through Jointing kit for 11 KV, 3C x 400sq.mm XLPE Cable as per technical specifications, scope of works and approved drawings",
+    "qty": 159.0,
+    "unit": "NOS",
+    "rate": 17551.25,
+    "totalAmount": 2790648.75
+  },
+  {
+    "slNo": 8,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  Outdoor type Heat shrinkable end Termination Jointing kit for 11 KV, 3C x 185 sq.mm XLPE Cable as per technical specifications, scope of works and approved drawings",
+    "qty": 480.0,
+    "unit": "NOS",
+    "rate": 8061.74,
+    "totalAmount": 3869635.2
+  },
+  {
+    "slNo": 9,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  Indoor type Heat shrinkable end Termination Jointing kit for 11 KV, 3C x 185 sq.mm XLPE Cable as per technical specifications, scope of works and approved drawings.",
+    "qty": 47.0,
+    "unit": "NOS",
+    "rate": 5758.81,
+    "totalAmount": 270664.07
+  },
+  {
+    "slNo": 10,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of  Heat shrinkable Straight Through Jointing kit for 11 KV, 3C x 185 sq.mm XLPE Cable as per technical specifications, scope of works and approved drawings.",
+    "qty": 20.0,
+    "unit": "NOS",
+    "rate": 16076.46,
+    "totalAmount": 321529.2
+  },
+  {
+    "slNo": 11,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of 11 kV Polymer PIN Insulator as per technical specifications, scope of works and approved drawings.",
+    "qty": 2880.0,
+    "unit": "NOS",
+    "rate": 240.66,
+    "totalAmount": 693100.8
+  },
+  {
+    "slNo": 12,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of MS Channel (75X40 MM) as per technical specifications, scope of works and approved drawings.",
+    "qty": 20.563,
+    "unit": "MT",
+    "rate": 108631.05,
+    "totalAmount": 2233780.28
+  },
+  {
+    "slNo": 13,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of MS Flat (65X6 MM) as per technical specifications, scope of works and approved drawings.",
+    "qty": 3.571,
+    "unit": "MT",
+    "rate": 115986.09,
+    "totalAmount": 414186.33
+  },
+  {
+    "slNo": 14,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of MS Flat (65X6 MM) as per technical specifications, scope of works and approved drawings.",
+    "qty": 480.0,
+    "unit": "NOS",
+    "rate": 363.26,
+    "totalAmount": 174364.8
+  },
+  {
+    "slNo": 15,
+    "part": "Part-A (Material)",
+    "description": "Supply & delivery of GI Wire (5mm Wire) as per technical specifications, scope of works and approved drawings.",
+    "qty": 1.68,
+    "unit": "MT",
+    "rate": 135109.75,
+    "totalAmount": 226984.38
+  },
+  {
+    "slNo": 16,
+    "part": "Part-B (Erection)",
+    "description": "Survey of HT cable route",
+    "qty": 102960.0,
+    "unit": "M",
+    "rate": 2.86,
+    "totalAmount": 294465.6
+  },
+  {
+    "slNo": 17,
+    "part": "Part-B (Erection)",
+    "description": "Laying and dressing of 11kV 3C 400SQMM XLPE cable.",
+    "qty": 40705.0,
+    "unit": "M",
+    "rate": 65.5,
+    "totalAmount": 2666177.5
+  },
+  {
+    "slNo": 18,
+    "part": "Part-B (Erection)",
+    "description": "Laying and dressing of 11kV 3C 185SQMM XLPE cable.",
+    "qty": 63750.0,
+    "unit": "M",
+    "rate": 54.94,
+    "totalAmount": 3502425.0
+  },
+  {
+    "slNo": 19,
+    "part": "Part-B (Erection)",
+    "description": "Making of indoor and outdoor end termination joint in 11kV 3C 400SQMM XLPE cable.",
+    "qty": 93.0,
+    "unit": "NOS",
+    "rate": 2137.41,
+    "totalAmount": 198779.13
+  },
+  {
+    "slNo": 20,
+    "part": "Part-B (Erection)",
+    "description": "Making of straight through joint in 11kV 3C 400SQMM XLPE cable.",
+    "qty": 159.0,
+    "unit": "NOS",
+    "rate": 2271.61,
+    "totalAmount": 361185.99
+  },
+  {
+    "slNo": 21,
+    "part": "Part-B (Erection)",
+    "description": "Making of indoor and outdoor end termination joint in 11kV 3C 185SQMM XLPE cable.",
+    "qty": 527.0,
+    "unit": "NOS",
+    "rate": 1780.3,
+    "totalAmount": 938218.1
+  },
+  {
+    "slNo": 22,
+    "part": "Part-B (Erection)",
+    "description": "Making of straight through joint in 11kV 3C 185SQMM XLPE cable.",
+    "qty": 20.0,
+    "unit": "NOS",
+    "rate": 2152.21,
+    "totalAmount": 43044.2
+  },
+  {
+    "slNo": 23,
+    "part": "Part-B (Erection)",
+    "description": "Making protective duct for cable joint",
+    "qty": 179.0,
+    "unit": "NOS",
+    "rate": 9499.54,
+    "totalAmount": 1700417.66
+  },
+  {
+    "slNo": 24,
+    "part": "Part-B (Erection)",
+    "description": "Supply and erection of cast iron cable marker to identify UG cable location",
+    "qty": 808.0,
+    "unit": "NOS",
+    "rate": 316.97,
+    "totalAmount": 256111.76
+  },
+  {
+    "slNo": 25,
+    "part": "Part-B (Erection)",
+    "description": "Supply and fixing of GI Pipe (100 MM Dia) for cable protection purpose",
+    "qty": 2059.0,
+    "unit": "M",
+    "rate": 820.95,
+    "totalAmount": 1690336.05
+  },
+  {
+    "slNo": 26,
+    "part": "Part-B (Erection)",
+    "description": "Microtunneling work with laying of HDPE pipe as per instructuion of the site Engineer and site condition (160 MM Dia, PE-80, PN-6) for laying of UG cable along with supply of HDPE pipe.",
+    "qty": 40285.0,
+    "unit": "M",
+    "rate": 1677.81,
+    "totalAmount": 67590575.85
+  },
+  {
+    "slNo": 27,
+    "part": "Part-B (Erection)",
+    "description": "Microtunneling work with laying of HDPE pipe as per instructuion of the site Engineer and site condition ( 110 MM Dia, PE-80, PN-6) for laying of UG cable along with supply of HDPE pipe.",
+    "qty": 22559.0,
+    "unit": "M",
+    "rate": 1179.12,
+    "totalAmount": 26599768.08
+  },
+  {
+    "slNo": 28,
+    "part": "Part-B (Erection)",
+    "description": "Excavation of soil for formation of cable trench for laying of 11kV 3C 185SQMM XLPE cable.",
+    "qty": 35580.0,
+    "unit": "CUM",
+    "rate": 21.13,
+    "totalAmount": 751805.4
+  },
+  {
+    "slNo": 29,
+    "part": "Part-B (Erection)",
+    "description": "Excavation of soil for formation of cable round and re-instatement of the same.",
+    "qty": 2545.66,
+    "unit": "CUM",
+    "rate": 21.13,
+    "totalAmount": 53789.8
+  },
+  {
+    "slNo": 30,
+    "part": "Part-B (Erection)",
+    "description": "Supply and laying of 1st class kiln burnt bricks.",
+    "qty": 99246.0,
+    "unit": "NOS",
+    "rate": 8.99,
+    "totalAmount": 892221.54
+  },
+  {
+    "slNo": 31,
+    "part": "Part-B (Erection)",
+    "description": "Making of RCC foundation for installation of outdoor 11 kV 3 way & 4 way RMU.",
+    "qty": 30.0,
+    "unit": "NOS",
+    "rate": 25426.14,
+    "totalAmount": 762784.2
+  },
+  {
+    "slNo": 32,
+    "part": "Part-B (Erection)",
+    "description": "Erection of outdoor 11 kV 3 Way RMU.",
+    "qty": 12.0,
+    "unit": "SET",
+    "rate": 10340.55,
+    "totalAmount": 124086.6
+  },
+  {
+    "slNo": 33,
+    "part": "Part-B (Erection)",
+    "description": "Erection of outdoor 11 kV 4 Way RMU.",
+    "qty": 18.0,
+    "unit": "SET",
+    "rate": 13071.77,
+    "totalAmount": 235291.86
+  },
+  {
+    "slNo": 34,
+    "part": "Part-B (Erection)",
+    "description": "Earthing of outdoor 11 kV 3 Way & 4 Way RMU along with supply of earthing materials (GI pipe and GI flat).",
+    "qty": 30.0,
+    "unit": "NOS",
+    "rate": 5322.95,
+    "totalAmount": 159688.5
+  },
+  {
+    "slNo": 35,
+    "part": "Part-B (Erection)",
+    "description": "Fixing of 11 kV PIN Insulator.",
+    "qty": 2880.0,
+    "unit": "NOS",
+    "rate": 66.55,
+    "totalAmount": 191664.0
+  },
+  {
+    "slNo": 36,
+    "part": "Part-B (Erection)",
+    "description": "Earthing complete.",
+    "qty": 480.0,
+    "unit": "NOS",
+    "rate": 330.7,
+    "totalAmount": 158736.0
+  }
+]

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Malda UG Cable</title>
+  <meta name="description" content="Malda Division underground cable project register. BOQ, GTP, DI, material receive, billing, and daily progress." />
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>" />
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>Malda UG</strong>
+        <span>PO 5301083425</span>
+      </div>
+      <nav id="nav" aria-label="Project pages"></nav>
+      <div class="user-box" id="user-box" hidden>
+        <p class="who" id="user-label"></p>
+        <p class="save-note">Shared register</p>
+        <button type="button" id="sign-out" class="text-btn quiet">Sign out</button>
+        <button type="button" id="reset-btn" class="text-btn" hidden>Reset to LOA</button>
+      </div>
+    </aside>
+    <main class="workspace" id="workspace">
+      <div id="toast" class="toast" hidden></div>
+      <section id="page-home" class="page"></section>
+      <section id="page-boq" class="page" hidden></section>
+      <section id="page-gtp" class="page" hidden></section>
+      <section id="page-di" class="page" hidden></section>
+      <section id="page-receive" class="page" hidden></section>
+      <section id="page-billing" class="page" hidden></section>
+      <section id="page-daily" class="page" hidden></section>
+      <section id="page-report" class="page" hidden></section>
+      <section id="page-users" class="page" hidden></section>
+    </main>
+  </div>
+  <dialog id="inspect-dialog"></dialog>
+  <script type="module" src="./src/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>

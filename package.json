@@ -1,0 +1,19 @@
+{
+  "name": "malda-ug-project-utility",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3000 --host",
+    "build": "vite build && powershell -Command \"Copy-Item -Path sw.js, manifest.json -Destination dist/ -Force\"",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "chart.js": "^4.4.8",
+    "lucide": "^0.475.0"
+  },
+  "devDependencies": {
+    "vite": "^6.1.0"
+  }
+}
