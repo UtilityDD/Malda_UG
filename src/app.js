@@ -9,21 +9,28 @@ const PAGES = [
   { id: 'receive', label: 'Material receive', note: 'Store receipt record' },
   { id: 'billing', label: 'Vendor billing', note: 'Supply and erection invoices' },
   { id: 'daily', label: 'Daily progress', note: "Today's site quantity" },
-  { id: 'report', label: 'Report', note: 'Day book and pending steps' },
   { id: 'users', label: 'People', note: 'Logins and roles' }
 ];
 
 const ROLE_PAGES = {
-  Vendor: ['home', 'gtp', 'di', 'billing', 'daily', 'report'],
-  Turnkey: ['home', 'gtp', 'di', 'billing', 'daily', 'report'],
-  Region: ['home', 'boq', 'gtp', 'di', 'billing', 'daily', 'report'],
-  WBSEDCL: ['home', 'boq', 'gtp', 'di', 'billing', 'daily', 'report'],
-  Store: ['home', 'receive', 'report'],
-  Admin: ['home', 'boq', 'gtp', 'di', 'receive', 'billing', 'daily', 'report', 'users']
+  Vendor: ['home', 'gtp', 'di', 'billing', 'daily'],
+  Turnkey: ['home', 'gtp', 'di', 'billing', 'daily'],
+  Region: ['home', 'boq', 'gtp', 'di', 'billing', 'daily'],
+  WBSEDCL: ['home', 'boq', 'gtp', 'di', 'billing', 'daily'],
+  Store: ['home', 'receive'],
+  Viewer: ['home', 'boq', 'gtp', 'di', 'receive', 'billing', 'daily'],
+  Admin: ['home', 'boq', 'gtp', 'di', 'receive', 'billing', 'daily', 'users']
 };
 
+let simulatedRole = null;
+
+function effectiveRole() {
+  if (sessionUser && user.role === 'Admin' && simulatedRole) return simulatedRole;
+  return user.role || '';
+}
+
 function roleKey() {
-  return String(user.role || '').trim().toLowerCase();
+  return String(effectiveRole()).trim().toLowerCase();
 }
 function isAdmin() {
   return roleKey() === 'admin';
@@ -39,6 +46,9 @@ function isVendor() {
 function isStore() {
   return roleKey() === 'store';
 }
+function isViewer() {
+  return roleKey() === 'viewer';
+}
 
 const FEEDERS = [
   'English Bazar Feeder-1 (Rabindra Avenue)',
@@ -53,15 +63,13 @@ let searchQuery = '';
 let boqPart = 'Part-A (Material)';
 let gtpTab = 'vendor';
 let billTab = 'supply';
-let dailyTab = 'items';
+let dailyTab = 'supply';
 let receiveTab = 'materials';
-let reportTab = 'day';
 let inspTab = 'summary';
 let inspModal = null;
 let entryModal = null;
 let inspectOpenedAt = 0;
 let inspectTimer = 0;
-let reportDate = todayISO();
 let authMode = 'login';
 let booting = true;
 let loadError = '';
@@ -80,7 +88,6 @@ let sessionToken = 0;
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
-  document.getElementById('reset-btn').addEventListener('click', resetData);
   document.getElementById('sign-out').addEventListener('click', () => remote.signOut());
 
   document.addEventListener('click', onClick);
@@ -197,7 +204,7 @@ function adopt(data) {
         target.remarks = row.remarks;
         target.actionBy = row.actionBy;
       });
-    const logged = sum(dailyLogs.filter((row) => Number(row.itemSl) === item.slNo), (row) => Number(row.executedQty) || 0);
+    const logged = sum(dailyLogs.filter((row) => Number(row.itemSl) === item.slNo && row.approvalStatus === 'Approved'), (row) => Number(row.executedQty) || 0);
     item.pipeline.execution.executedQty = logged;
     const received = sum(receipts.filter((row) => Number(row.itemSl) === item.slNo), (row) => Number(row.qty) || 0);
     const cleared = sum(dispatchInstructions.filter((row) => Number(row.itemSl) === item.slNo), (row) => Number(row.qty) || 0);
@@ -212,8 +219,28 @@ function adopt(data) {
 function paint() {
   const box = document.getElementById('user-box');
   box.hidden = !user.active;
-  if (user.active) document.getElementById('user-label').textContent = `${user.name} · ${user.role}`;
-  document.getElementById('reset-btn').hidden = user.role !== 'Admin';
+  if (user.active) {
+    document.getElementById('user-label').textContent = `${user.name} · ${user.role}${simulatedRole ? ` (Simulating ${simulatedRole})` : ''}`;
+  }
+  const simContainer = document.getElementById('admin-sim-container');
+  if (simContainer) {
+    if (user.active && user.role === 'Admin') {
+      simContainer.innerHTML = `
+        <label class="sim-label" style="font-size: 0.75rem; color: #94a3b8; display: block; margin-top: 0.5rem;">
+          Simulate View:
+          <select id="sim-role-select" style="width: 100%; font-size: 0.75rem; padding: 2px 4px; margin-top: 2px; border-radius: 4px; background: #1e293b; color: #f8fafc; border: 1px solid #334155;">
+            <option value=""${!simulatedRole ? ' selected' : ''}>👑 Admin (Full Control)</option>
+            <option value="Region"${simulatedRole === 'Region' ? ' selected' : ''}>🏢 Region (WBSEDCL)</option>
+            <option value="Vendor"${simulatedRole === 'Vendor' ? ' selected' : ''}>🚜 Vendor (Turnkey)</option>
+            <option value="Store"${simulatedRole === 'Store' ? ' selected' : ''}>📦 Store Keeper</option>
+            <option value="Viewer"${simulatedRole === 'Viewer' ? ' selected' : ''}>👁️ Viewer (Read Only)</option>
+          </select>
+        </label>
+      `;
+    } else {
+      simContainer.innerHTML = '';
+    }
+  }
   renderNav();
   document.querySelectorAll('.page').forEach((page) => {
     page.hidden = page.id !== `page-${currentPage}`;
@@ -250,7 +277,7 @@ function renderCurrent() {
   if (currentPage === 'billing') return renderBilling();
   if (currentPage === 'daily') return renderDaily();
   if (currentPage === 'users') return renderUsers();
-  return renderReport();
+  return renderHome();
 }
 
 function renderAuth() {
@@ -265,17 +292,6 @@ function renderAuth() {
       <p class="form-msg"></p>
       <button type="submit" class="primary">${signup ? 'Create login' : 'Sign in'}</button>
       <button type="button" class="ghost" data-action="auth-mode" data-mode="${signup ? 'login' : 'signup'}">${signup ? 'I already have a login' : 'Create a login'}</button>
-
-      <div class="demo-auth-box">
-        <div class="demo-auth-title">⚡ Developer Test Logins</div>
-        <p class="demo-auth-desc">Click any demo account to auto-fill credentials for testing:</p>
-        <div class="demo-btn-grid">
-          <button type="button" class="demo-role-btn admin" data-action="fill-demo" data-email="admin@malda-ug.gov.in" data-pass="admin123" data-role="Admin">👑 Admin</button>
-          <button type="button" class="demo-role-btn region" data-action="fill-demo" data-email="wbsedcl.de@malda-ug.gov.in" data-pass="region123" data-role="Region">🏢 Region (WBSEDCL)</button>
-          <button type="button" class="demo-role-btn vendor" data-action="fill-demo" data-email="tarun.project@malda-ug.gov.in" data-pass="vendor123" data-role="Vendor">🚜 Vendor (Turnkey)</button>
-          <button type="button" class="demo-role-btn store" data-action="fill-demo" data-email="store.keeper@malda-ug.gov.in" data-pass="store123" data-role="Store">📦 Store Keeper</button>
-        </div>
-      </div>
     </form>
   `;
 }
@@ -296,7 +312,7 @@ function renderUsers() {
       <td><strong>${esc(person.name)}</strong><span class="meta">${esc(person.email)}</span></td>
       <td>
         <select data-person="${esc(person.id)}" data-field="role">
-          ${['Vendor', 'Region', 'Store', 'Admin', 'Turnkey', 'WBSEDCL'].map((role) => `<option${role === person.role ? ' selected' : ''}>${role}</option>`).join('')}
+          ${['Vendor', 'Region', 'Store', 'Viewer', 'Admin', 'Turnkey', 'WBSEDCL'].map((role) => `<option${role === person.role ? ' selected' : ''}>${role}</option>`).join('')}
         </select>
       </td>
       <td>
@@ -1602,35 +1618,52 @@ function dailyModal() {
   if (entryModal.id) {
     const log = dailyLogs.find((row) => row.id === entryModal.id);
     if (!log) return '';
-    const sub = `${esc(log.feeder)} · ${qtyText(log.executedQty, log.unit)} · ${esc(log.siteEngineer || '')}`;
+    const isPending = log.approvalStatus !== 'Approved';
+    const sub = `Sl ${log.itemSl} · ${esc(log.feeder)} · ${qtyText(log.executedQty, log.unit)} · ${esc(log.siteEngineer || '')}`;
+    const canVerify = (isRegion() || isAdmin()) && isPending;
     return `
-      ${modalTitle(esc(log.date), sub)}
-      <p class="quiet">${esc(log.location || '')}${log.remarks ? `<br>${esc(log.remarks)}` : ''}</p>
-      ${entryModal.mode === 'verify' ? `
+      ${modalTitle(`Daily Log · ${esc(log.date)}`, sub)}
+      <div style="background: rgba(0,0,0,0.03); padding: 0.85rem; border-radius: 6px; margin-bottom: 0.85rem;" class="span-all">
+        <p style="margin: 0 0 4px 0;"><strong>Item:</strong> ${esc(log.itemDesc)}</p>
+        <p style="margin: 0 0 4px 0;"><strong>Feeder / Stretch:</strong> ${esc(log.feeder)}</p>
+        <p style="margin: 0 0 4px 0;"><strong>Location:</strong> ${esc(log.location || '—')}</p>
+        <p style="margin: 0 0 4px 0;"><strong>Entered Quantity:</strong> <strong>${fmtQty(log.executedQty)} ${esc(log.unit)}</strong></p>
+        <p style="margin: 0;"><strong>Status:</strong> ${statusBadge(log.approvalStatus === 'Approved' ? 'Approved' : 'Pending Verification')}</p>
+        ${log.remarks ? `<p style="margin: 4px 0 0 0;"><strong>Remarks:</strong> ${esc(log.remarks)}</p>` : ''}
+      </div>
+      ${canVerify ? `
         <form class="entry entry-plain" id="form-verify">
           <input type="hidden" name="id" value="${esc(log.id)}" />
-          <div class="actions"><button class="primary" type="submit">Verify</button></div>
+          <div class="actions"><button class="primary" type="submit">Verify & Approve Progress</button></div>
           <p class="form-msg span-all"></p>
         </form>
-      ` : `<p class="quiet">${esc(log.approvalStatus || 'Pending')}</p>`}
+      ` : ''}
     `;
   }
   const item = findItem(entryModal.sl);
   if (!item) return '';
-  const left = Math.max(0, scopeQty(item) - executedQty(item));
-  const sub = `LOA ${qtyText(item.loaQty, item.unit)} · Survey ${surveyText(item)} · ${qtyText(left, item.unit)} left`;
-  if (entryModal.mode !== 'log') return `${modalTitle(`Sl ${item.slNo} · ${esc(itemTitle(item))}`, sub)}<p class="quiet">Executed ${qtyText(executedQty(item), item.unit)}.</p>`;
+  const appQty = executedQty(item);
+  const pendQty = pendingExecutedQty(item);
+  const scope = scopeQty(item);
+  const left = Math.max(0, scope - appQty - pendQty);
+  const sub = `${item.part} · LOA ${qtyText(item.loaQty, item.unit)} · Survey ${surveyText(item)} · Approved ${qtyText(appQty, item.unit)}`;
+  if (entryModal.mode !== 'log') return `${modalTitle(`Sl ${item.slNo} · ${esc(itemTitle(item))}`, sub)}<p class="quiet">Approved Progress: ${qtyText(appQty, item.unit)}.</p>`;
   return `
     ${modalTitle(`Sl ${item.slNo} · ${esc(itemTitle(item))}`, sub)}
     <form class="entry entry-plain" id="form-daily">
       <input type="hidden" name="item" value="${item.slNo}" />
       <label>Date <input name="date" type="date" required value="${todayISO()}" /></label>
-      <label class="span-2">Feeder <input name="feeder" list="feeder-list" required placeholder="Feeder or stretch" /></label>
+      <label class="span-2">Feeder / Substation Outlet
+        <input name="feeder" list="feeder-list" required placeholder="Select or type feeder name" />
+      </label>
       <datalist id="feeder-list">${FEEDERS.map((feeder) => `<option value="${esc(feeder)}"></option>`).join('')}</datalist>
-      <label>Qty today <input name="qty" type="number" min="0.001" step="any" required placeholder="Up to ${fmtQty(left)}" /></label>
-      <label class="span-2">Location <input name="location" required placeholder="Exact stretch" /></label>
-      <label class="span-2">Remarks <input name="remarks" placeholder="Optional" /></label>
-      <div class="actions"><button class="primary" type="submit">Save today's qty</button></div>
+      <label>Today's Quantity (${esc(item.unit)})
+        <input name="qty" type="number" min="0.001" step="any" required placeholder="Up to ${fmtQty(left)}" />
+      </label>
+      <label class="span-2">Location / Stretch <input name="location" required placeholder="Exact site location" /></label>
+      <label class="span-2">Remarks <input name="remarks" placeholder="Optional site note" /></label>
+      <p class="span-all meta" style="margin: 0; color: #f59e0b;">⏳ Note: Submitted quantity will remain as pending until verified by Region/Division User.</p>
+      <div class="actions"><button class="primary" type="submit">Submit for Verification</button></div>
       <p class="form-msg span-all"></p>
     </form>
   `;
@@ -1726,109 +1759,86 @@ function invoiceRows(type) {
 }
 
 function renderDaily() {
-  const hint = isRegion()
-    ? 'Click a pending log to verify it.'
-    : 'Use Enter on an item to record today\'s quantity.';
-  const body = dailyTab === 'items' ? dailyItems() : dailyLogTable(dailyTab === 'pending');
+  const pendingCount = dailyLogs.filter((log) => log.approvalStatus !== 'Approved').length;
+  const pendingLabel = pendingCount > 0 ? `Pending Approval (${pendingCount})` : 'Pending Approval';
+  const tabs = [
+    ['supply', 'Part-A (Supply)'],
+    ['erection', 'Part-B (Erection)'],
+    ['logs', 'Daily Logs'],
+    ['pending', pendingLabel]
+  ];
+  const hint = (isRegion() || isAdmin())
+    ? 'Verify pending daily progress entries submitted by vendors to count them into executed progress.'
+    : 'Select Supply or Erection item to enter today\'s site progress quantity for Region approval.';
+  
+  let body = '';
+  if (dailyTab === 'supply') {
+    body = dailyItems('Part-A (Material)');
+  } else if (dailyTab === 'erection') {
+    body = dailyItems('Part-B (Erection)');
+  } else if (dailyTab === 'logs') {
+    body = dailyLogTable(false);
+  } else {
+    body = dailyLogTable(true);
+  }
+
   return `
     ${head('Daily progress', hint)}
-    ${tabBar('daily', [['items', 'Items'], ['logs', 'Logs'], ['pending', 'Pending']], dailyTab)}
+    ${tabBar('daily', tabs, dailyTab)}
     ${body}
   `;
 }
 
-function dailyItems() {
+function dailyItems(partFilter) {
+  const items = boqItems.filter((item) => partFilter ? item.part === partFilter : true);
   const enter = (isVendor() || isAdmin())
-    ? (item) => `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Enter</button>`
+    ? (item) => `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Enter Qty</button>`
     : () => '';
-  return table(['Sl', 'Item', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Executed')], boqItems.map((item) => `
-    <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
-      <td>${item.slNo}</td>
-      <td class="desc" title="${esc(item.description)}">${nameButton(item)} ${enter(item)}</td>
-      <td class="num">${qtyText(item.loaQty, item.unit)}</td>
-      <td class="num">${surveyText(item)}</td>
-      <td class="num">${qtyText(executedQty(item), item.unit)}</td>
-    </tr>
-  `), 5);
+
+  return table(['Sl', 'Item Description', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Approved Progress'), numHead('Pending Approval'), numHead('Balance Qty'), 'Action'], items.map((item) => {
+    const appQty = executedQty(item);
+    const pendQty = pendingExecutedQty(item);
+    const scope = scopeQty(item);
+    const balance = Math.max(0, scope - appQty);
+    return `
+      <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
+        <td>${item.slNo}</td>
+        <td class="desc" title="${esc(item.description)}">
+          ${nameButton(item)}
+          <span class="meta">${esc(item.category)} · ${esc(item.unit)}</span>
+        </td>
+        <td class="num">${qtyText(item.loaQty, item.unit)}</td>
+        <td class="num">${surveyText(item)}</td>
+        <td class="num" style="color: #22c55e; font-weight: 600;">${qtyText(appQty, item.unit)}</td>
+        <td class="num" style="${pendQty > 0 ? 'color: #f59e0b; font-weight: 600;' : 'color: #94a3b8;'}">${pendQty > 0 ? qtyText(pendQty, item.unit) : '—'}</td>
+        <td class="num">${qtyText(balance, item.unit)}</td>
+        <td class="row-actions">${enter(item)}</td>
+      </tr>
+    `;
+  }), 8, `No ${partFilter === 'Part-A (Material)' ? 'Supply' : 'Erection'} items in the BOQ.`);
 }
 
 function dailyLogTable(pendingOnly) {
   const rows = dailyLogs
     .filter((log) => !pendingOnly || log.approvalStatus !== 'Approved')
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  return table(['Date', 'Feeder / location', 'Item', numHead('Qty'), 'By', 'Status'], rows.map((log) => `
-    <tr class="pick" data-action="open-entry" data-id="${esc(log.id)}" data-sl="${log.itemSl}" data-q="${esc(`${log.date} ${log.feeder} ${log.location} ${log.itemDesc} ${log.siteEngineer} ${log.approvalStatus}`)}">
-      <td><button type="button" class="row-link" data-action="open-entry" data-id="${esc(log.id)}" data-sl="${log.itemSl}">${esc(log.date)}</button></td>
-      <td>${esc(log.feeder)}<br><span class="kpi-sub">${esc(log.location)}</span></td>
-      <td class="desc" title="${esc(log.itemDesc)}">${esc(log.itemDesc)}</td>
-      <td class="num">${fmtQty(log.executedQty)} ${esc(log.unit)}</td>
-      <td>${esc(log.siteEngineer)}</td>
-      <td>${statusBadge(log.approvalStatus)}</td>
-    </tr>
-  `), 6, pendingOnly ? 'No log is waiting for verification.' : 'No progress entered yet.');
-}
-
-function renderReport() {
-  const logs = dailyLogs.filter((log) => log.date === reportDate);
-  const waiting = waitingRows();
-  return `
-    <div class="page-head">
-      <div>
-        <h1>Report</h1>
-        <p>${esc(PROJECT_INFO.division)} · ${esc(formatDisplayDate(isoToDmy(reportDate)))}</p>
-      </div>
-      <div class="head-actions no-print">
-        <input class="search" type="search" placeholder="Search" value="${esc(searchQuery)}" />
-        ${reportTab === 'day' ? `<input id="report-date" type="date" value="${reportDate}" />` : ''}
-        <button type="button" class="ghost" data-action="print">Print</button>
-      </div>
-    </div>
-    ${tabBar('report', [['day', 'Day book'], ['waiting', 'Waiting']], reportTab)}
-    ${reportTab === 'waiting'
-      ? table(['Item', 'Waiting for', 'Detail'], waiting.map((row) => `
-        <tr data-q="${esc(`${row.name} ${row.step} ${row.detail}`)}">
-          <td class="desc" title="${esc(row.name)}">${esc(row.name)}</td>
-          <td>${esc(row.step)}</td>
-          <td>${esc(row.detail)}</td>
-        </tr>
-      `), 3, 'Nothing is waiting on approval, inspection, DI, receive, or bill.')
-      : table(['Item', numHead('Qty'), 'Feeder', 'By', 'Status'], logs.map((log) => `
-        <tr data-q="${esc(`${log.itemDesc} ${log.feeder} ${log.siteEngineer} ${log.approvalStatus}`)}">
-          <td class="desc" title="${esc(log.itemDesc)}">${esc(log.itemDesc)}</td>
-          <td class="num">${fmtQty(log.executedQty)} ${esc(log.unit)}</td>
-          <td>${esc(log.feeder)}</td>
-          <td>${esc(log.siteEngineer)}</td>
-          <td>${statusBadge(log.approvalStatus)}</td>
-        </tr>
-      `), 5, 'No progress entered for this date.')}
-  `;
-}
-
-function waitingRows() {
-  const rows = [];
-  boqItems.filter(isMaterial).forEach((item) => {
-    const vendor = item.pipeline.vendorAppr;
-    const gtp = item.pipeline.gtpDoc;
-    const di = diQty(item);
-    const received = storeQty(item);
-    if (vendor.status !== 'Approved') {
-      rows.push({ name: materialName(item), step: 'Vendor', detail: waitingDetail(vendor) });
-    } else if (gtp.status !== 'Approved') {
-      rows.push({ name: materialName(item), step: 'GTP', detail: waitingDetail(gtp) });
-    } else if (inspectionWait(item)) {
-      rows.push(inspectionWait(item));
-    } else if (received + 0.0001 < di) {
-      rows.push({ name: item.description, step: 'Receive', detail: `${fmtQty(di - received)} ${item.unit} not received` });
-    }
-  });
-  invoices.filter((invoice) => invoice.payStatus !== 'Paid').forEach((invoice) => {
-    rows.push({
-      name: invoice.invoiceNo,
-      step: `${invoice.type} payment`,
-      detail: `${invoice.lines.length} items · ${formatMoney(sum(invoice.lines, (line) => line.net))}`
-    });
-  });
-  return rows;
+  return table(['Date', 'Feeder / Location', 'Item Description', numHead('Entered Qty'), 'Entered By', 'Verification Status', 'Action'], rows.map((log) => {
+    const isPending = log.approvalStatus !== 'Approved';
+    const verifyBtn = (isRegion() || isAdmin()) && isPending
+      ? `<button type="button" class="tiny primary" data-action="open-entry" data-id="${esc(log.id)}" data-sl="${log.itemSl}">Verify</button>`
+      : '';
+    return `
+      <tr class="pick" data-action="open-entry" data-id="${esc(log.id)}" data-sl="${log.itemSl}" data-q="${esc(`${log.date} ${log.feeder} ${log.location} ${log.itemDesc} ${log.siteEngineer} ${log.approvalStatus}`)}">
+        <td><button type="button" class="row-link" data-action="open-entry" data-id="${esc(log.id)}" data-sl="${log.itemSl}">${esc(log.date)}</button></td>
+        <td>${esc(log.feeder)}<br><span class="meta">${esc(log.location)}</span></td>
+        <td class="desc" title="${esc(log.itemDesc)}">${esc(log.itemDesc)}</td>
+        <td class="num"><strong>${fmtQty(log.executedQty)}</strong> ${esc(log.unit)}</td>
+        <td>${esc(log.siteEngineer)}</td>
+        <td>${statusBadge(log.approvalStatus === 'Approved' ? 'Approved' : 'Pending Verification')}</td>
+        <td class="row-actions">${verifyBtn}</td>
+      </tr>
+    `;
+  }), 7, pendingOnly ? 'No daily log is waiting for Region verification.' : 'No progress entered yet.');
 }
 
 function onClick(event) {
@@ -1849,9 +1859,8 @@ function onClick(event) {
     if (group === 'boq') boqPart = tab === 'erection' ? 'Part-B (Erection)' : 'Part-A (Material)';
     if (group === 'gtp') gtpTab = tab === 'gtp' || tab === 'letters' ? tab : 'vendor';
     if (group === 'bill') billTab = tab === 'erection' ? 'erection' : 'supply';
-    if (group === 'daily') dailyTab = tab === 'logs' || tab === 'pending' ? tab : 'items';
+    if (group === 'daily') dailyTab = ['supply', 'erection', 'logs', 'pending'].includes(tab) ? tab : 'supply';
     if (group === 'receive') receiveTab = tab === 'receipts' ? 'receipts' : 'materials';
-    if (group === 'report') reportTab = tab === 'waiting' ? 'waiting' : 'day';
     paint();
     return;
   }
@@ -2137,6 +2146,12 @@ function rejectInvoiceQty(input) {
 }
 
 function onChange(event) {
+  if (event.target.id === 'sim-role-select') {
+    simulatedRole = event.target.value || null;
+    if (!canOpen(currentPage)) currentPage = 'home';
+    paint();
+    return;
+  }
   if (event.target.id === 'boq-part') {
     boqPart = event.target.value;
     paint();
@@ -3054,9 +3069,10 @@ async function saveDaily(form) {
   const feeder = field(form, 'feeder');
   const location = field(form, 'location');
   if (!date || !feeder || !location || !(qty > 0)) return setMsg(form, 'Enter date, feeder, location, and quantity.');
-  const done = executedQty(item);
-  const remain = scopeQty(item) - done;
-  if (qty > remain + 0.0001) return setMsg(form, `Only ${fmtQty(Math.max(remain, 0))} ${item.unit} is left on this item.`);
+  const appDone = executedQty(item);
+  const pendDone = pendingExecutedQty(item);
+  const remain = scopeQty(item) - appDone - pendDone;
+  if (qty > remain + 0.0001) return setMsg(form, `Only ${fmtQty(Math.max(remain, 0))} ${item.unit} is available beyond approved and pending logs.`);
   if (!requireName(form)) return;
   const row = {
     id: uid('DL'),
@@ -3073,9 +3089,8 @@ async function saveDaily(form) {
   };
   if (!await finish(form, () => remote.saveLog(row))) return;
   dailyLogs.unshift(row);
-  item.pipeline.execution.executedQty = done + qty;
   entryModal = null;
-  toast('Daily quantity saved');
+  toast('Daily progress submitted for Region verification');
   paint();
 }
 
@@ -3083,17 +3098,21 @@ async function verifyLog(id) {
   if (!isRegion() && !isAdmin()) return;
   const log = dailyLogs.find((row) => row.id === id);
   if (!log || log.approvalStatus === 'Approved') return;
-  const inspector = user.name || 'WBSEDCL';
+  const inspector = user.name || user.role || 'WBSEDCL';
   try {
     await remote.verifyLog(id, inspector);
   } catch (error) {
-    toast(error.message || 'Could not save');
+    toast(error.message || 'Could not verify log');
     return;
   }
   log.approvalStatus = 'Approved';
   log.inspector = inspector;
+  const item = findItem(log.itemSl);
+  if (item) {
+    item.pipeline.execution.executedQty = executedQty(item);
+  }
   entryModal = null;
-  toast('Daily entry verified');
+  toast('Daily progress verified and counted into executed total');
   paint();
 }
 
@@ -3300,7 +3319,13 @@ function storeQty(item) {
 }
 
 function executedQty(item) {
-  return Number(item.pipeline?.execution?.executedQty) || 0;
+  const approvedLogs = sum(dailyLogs.filter((row) => Number(row.itemSl) === item.slNo && row.approvalStatus === 'Approved'), (row) => Number(row.executedQty) || 0);
+  const stored = Number(item.pipeline?.execution?.executedQty) || 0;
+  return Math.max(approvedLogs, stored);
+}
+
+function pendingExecutedQty(item) {
+  return sum(dailyLogs.filter((row) => Number(row.itemSl) === item.slNo && row.approvalStatus !== 'Approved'), (row) => Number(row.executedQty) || 0);
 }
 
 function invoiceGross(invoice) {

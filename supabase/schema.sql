@@ -16,7 +16,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   name text not null default '',
   email text not null default '',
-  role text not null default 'Vendor' check (role in ('Vendor', 'Region', 'Turnkey', 'WBSEDCL', 'Store', 'Admin')),
+  role text not null default 'Vendor' check (role in ('Vendor', 'Region', 'Turnkey', 'WBSEDCL', 'Store', 'Viewer', 'Admin')),
   region_id text not null default 'REG-MALDA',
   vendor_id text not null default 'VEND-512589',
   active boolean not null default false
