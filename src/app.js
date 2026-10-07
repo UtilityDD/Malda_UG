@@ -1323,9 +1323,8 @@ function gtpBatchModal() {
   const draft = entryModal.draft;
   if (draft.previewing) return gtpBatchPreviewModal(draft);
   const kinds = batchKinds(draft.kind);
-  const needVendor = kinds.includes('vendor');
   const picked = new Set(draft.picked.map(Number));
-  const rowHint = draft.vendor || 'Comment / Vendor';
+  const rowHint = 'Vendor name / Manufacturer (required)';
   const rows = boqItems.filter(isMaterial).map((item) => {
     const open = kinds.filter((kind) => approvalRecord(item, kind).status !== 'Approved');
     const locked = open.length === 0;
@@ -1345,7 +1344,7 @@ function gtpBatchModal() {
           </span>
         </label>
         <span class="pick-status">${status}</span>
-        <input class="pick-vendor" type="text" data-vendor-sl="${item.slNo}" value="${esc(vendorValue)}" placeholder="${esc(rowHint)}" aria-label="Comment for Sl ${item.slNo}" ${locked ? 'disabled' : ''} />
+        <input class="pick-vendor" type="text" data-vendor-sl="${item.slNo}" value="${esc(vendorValue)}" placeholder="${esc(rowHint)}" aria-label="Vendor for Sl ${item.slNo}" ${locked ? 'disabled' : ''} />
       </div>
     `;
   }).join('');
@@ -1360,14 +1359,13 @@ function gtpBatchModal() {
       </div>
       <label>Letter no. <input name="letterNo" required placeholder="e.g. TE/MALDA/2026/014" value="${esc(draft.letterNo)}" /></label>
       <label>Letter date <input name="date" type="date" required value="${esc(draft.date)}" /></label>
-      <label class="span-2">Comment <input name="vendor" placeholder="Enter optional comment or default vendor for all ticked rows" value="${esc(draft.vendor)}" /></label>
       <div class="batch-toolbar span-all">
         <input type="search" class="pick-search" placeholder="Filter materials…" value="${esc(draft.filter)}" aria-label="Filter materials" />
         <button type="button" class="tiny" data-action="batch-all">Tick all shown</button>
         <button type="button" class="tiny" data-action="batch-none">Clear ticks</button>
       </div>
       <div class="pick-list span-all">
-        <div class="pick-head"><span>Material</span><span>Current status</span><span>Comment / Vendor</span></div>
+        <div class="pick-head"><span>Material</span><span>Current status</span><span>Vendor / Manufacturer (Required)</span></div>
         ${rows || '<p class="pick-empty">No material items in the BOQ.</p>'}
         <p class="pick-empty filter-miss" hidden>No material matches the filter.</p>
       </div>
@@ -1398,7 +1396,7 @@ function gtpBatchPreviewModal(draft) {
         <td>${esc(commentVal)}</td>
       </tr>
     `;
-  }).join('');
+  });
 
   return `
     ${modalTitle('Preview & Confirm Submission', `Review details for letter reference ${esc(draft.letterNo)} before submitting.`)}
@@ -1407,11 +1405,10 @@ function gtpBatchPreviewModal(draft) {
       <div><span class="meta">Letter Date</span><br><strong>${esc(isoToDmy(draft.date))}</strong></div>
       <div><span class="meta">Submission Type</span><br><strong>${esc(typeLabel)}</strong></div>
       <div><span class="meta">Materials Covered</span><br><strong>${uniqueSl.length} ${uniqueSl.length === 1 ? 'material' : 'materials'}</strong></div>
-      ${draft.vendor ? `<div class="span-all"><span class="meta">Comment / Default Vendor</span><br><span>${esc(draft.vendor)}</span></div>` : ''}
     </div>
 
     <div class="span-all batch-sheet" style="max-height: 250px; overflow-y: auto; margin-bottom: 1rem;">
-      ${table(['Sl', 'Material', numHead('LOA Qty'), numHead('Survey Qty'), 'Comment / Vendor'], rows, 5)}
+      ${table(['Sl', 'Material', numHead('LOA Qty'), numHead('Survey Qty'), 'Vendor / Manufacturer'], rows, 5)}
     </div>
 
     <div class="actions span-all" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
@@ -2446,10 +2443,12 @@ async function saveGtpBatch(form) {
   }
   if (!draft.picked.length) return setMsg(form, 'Tick at least one material.');
   const payloads = [];
+  const missing = [];
   draft.picked.forEach((sl) => {
     const item = findItem(sl);
     if (!item || !isMaterial(item)) return;
-    const vendorName = String(draft.vendors[sl] || '').trim() || draft.vendor || (user.name || 'Vendor');
+    const vendorName = String(draft.vendors[sl] || '').trim();
+    if (!vendorName) missing.push(sl);
     kinds.forEach((kind) => {
       const record = approvalRecord(item, kind);
       if (record.status === 'Approved') return;
@@ -2457,7 +2456,7 @@ async function saveGtpBatch(form) {
         itemSl: item.slNo,
         kind,
         status: 'Submitted',
-        vendor: vendorName || record.vendor || '',
+        vendor: vendorName,
         letterNo: draft.letterNo,
         subDate: draft.date,
         apprDate: '',
@@ -2469,6 +2468,9 @@ async function saveGtpBatch(form) {
       });
     });
   });
+  if (missing.length) {
+    return setMsg(form, `Please enter the Vendor / Manufacturer name for Sl ${missing.join(', ')}.`);
+  }
   if (!payloads.length) return setMsg(form, 'Every ticked material is already approved.');
   if (!requireName(form)) return;
   
