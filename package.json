@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000 --host",
-    "build": "vite build && powershell -Command \"Copy-Item -Path sw.js, manifest.json -Destination dist/ -Force\"",
+    "build": "vite build && node -e \"import fs from 'fs'; fs.copyFileSync('sw.js', 'dist/sw.js'); fs.copyFileSync('manifest.json', 'dist/manifest.json');\"",
     "preview": "vite preview"
   },
   "dependencies": {
