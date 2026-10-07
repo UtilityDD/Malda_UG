@@ -145,7 +145,13 @@ function mapRegister(rows, people) {
   const logs = rows.logs || [];
   const itemBySl = new Map(items.map((item) => [item.sl_no, item]));
   const offerById = new Map(offers.map((offer) => [offer.id, offer]));
-  const vendorBySl = new Map(approvals.filter((row) => row.kind === 'vendor').map((row) => [row.item_sl, row]));
+  const vendorMap = new Map();
+  approvals.filter((row) => row.kind === 'vendor' && row.vendor).forEach((row) => {
+    const list = vendorMap.get(row.item_sl) || [];
+    if (!list.includes(row.vendor)) list.push(row.vendor);
+    vendorMap.set(row.item_sl, list);
+  });
+  const vendorBySl = new Map([...vendorMap.entries()].map(([sl, list]) => [sl, { vendor: list.join(', ') }]));
   return {
     items: items.map(toItem).sort((a, b) => a.slNo - b.slNo),
     approvals: approvals.map(toApproval),
@@ -222,8 +228,10 @@ export async function removeItem(slNo) {
   if (error) throw wrap(error);
 }
 
-export async function removeApproval(itemSl, kind) {
-  const { error } = await supabase.from('approvals').delete().eq('item_sl', itemSl).eq('kind', kind);
+export async function removeApproval(itemSl, kind, letterNo) {
+  let query = supabase.from('approvals').delete().eq('item_sl', itemSl).eq('kind', kind);
+  if (letterNo) query = query.eq('letter_no', letterNo);
+  const { error } = await query;
   if (error) throw wrap(error);
 }
 
@@ -238,14 +246,14 @@ export async function removeInvoice(id) {
 }
 
 export async function saveApproval(record) {
-  const { error } = await supabase.from('approvals').upsert(toApprovalRow(record), { onConflict: 'item_sl,kind' });
+  const { error } = await supabase.from('approvals').upsert(toApprovalRow(record), { onConflict: 'item_sl,kind,letter_no' });
   if (error) throw wrap(error);
 }
 
 // Many items under one letter / memo reference are saved in a single round trip.
 export async function saveApprovals(records) {
   if (!records.length) return;
-  const { error } = await supabase.from('approvals').upsert(records.map(toApprovalRow), { onConflict: 'item_sl,kind' });
+  const { error } = await supabase.from('approvals').upsert(records.map(toApprovalRow), { onConflict: 'item_sl,kind,letter_no' });
   if (error) throw wrap(error);
 }
 

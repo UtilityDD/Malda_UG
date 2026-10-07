@@ -891,3 +891,23 @@ td.letter-items .meta { white-space: nowrap; overflow: hidden; text-overflow: el
   .pick-qty-in { margin-left: 26px; width: calc(100% - 26px); }
 }
 
+.multi-cell-item {
+  padding: 3px 0;
+}
+.multi-cell-item + .multi-cell-item {
+  border-top: 1px dashed #e2e8f0;
+  margin-top: 3px;
+  padding-top: 4px;
+}
+.letter-link strong {
+  color: #0284c7;
+}
+.gtp-note-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+

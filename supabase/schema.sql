@@ -23,9 +23,13 @@ create table if not exists public.profiles (
 );
 
 ALTER TABLE public.profiles 
+  ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'Vendor',
   ADD COLUMN IF NOT EXISTS region_id TEXT DEFAULT 'REG-MALDA',
   ADD COLUMN IF NOT EXISTS vendor_id TEXT DEFAULT 'VEND-512589',
-  ADD COLUMN IF NOT EXISTS sub_role TEXT DEFAULT 'Engineer';
+  ADD COLUMN IF NOT EXISTS sub_role TEXT DEFAULT 'Engineer',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
 
 create table if not exists public.items (
   sl_no integer primary key,
@@ -54,8 +58,11 @@ create table if not exists public.approvals (
   memo_no text not null default '',
   remarks text not null default '',
   action_by text not null default '',
-  primary key (item_sl, kind)
+  primary key (item_sl, kind, letter_no)
 );
+
+ALTER TABLE public.approvals DROP CONSTRAINT IF EXISTS approvals_pkey;
+ALTER TABLE public.approvals ADD PRIMARY KEY (item_sl, kind, letter_no);
 
 create table if not exists public.offers (
   id text primary key,
@@ -150,12 +157,12 @@ security definer
 set search_path = public
 as $$
   select case
-    when role = 'Turnkey' then 'Vendor'
-    when role = 'WBSEDCL' then 'Region'
-    else role
+    when p.role = 'Turnkey' then 'Vendor'
+    when p.role = 'WBSEDCL' then 'Region'
+    else p.role
   end
-  from public.profiles
-  where id = auth.uid() and active;
+  from public.profiles p
+  where p.id = auth.uid() and coalesce(p.active, true);
 $$;
 
 create or replace function public.my_region_id()
@@ -165,7 +172,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce(region_id, 'REG-MALDA') from public.profiles where id = auth.uid() and active
+  select coalesce(p.region_id, 'REG-MALDA') from public.profiles p where p.id = auth.uid() and coalesce(p.active, true);
 $$;
 
 create or replace function public.my_vendor_id()
@@ -175,7 +182,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce(vendor_id, 'VEND-512589') from public.profiles where id = auth.uid() and active
+  select coalesce(p.vendor_id, 'VEND-512589') from public.profiles p where p.id = auth.uid() and coalesce(p.active, true);
 $$;
 
 create or replace function public.handle_new_user()
@@ -343,9 +350,9 @@ begin
     if new.status is distinct from 'Offered' then
       raise exception 'A new offer starts as offered';
     end if;
-    select approved_qty into vendor_qty from public.approvals
+    select max(coalesce(approved_qty, item.loa_qty)) into vendor_qty from public.approvals
       where item_sl = new.item_sl and kind = 'vendor' and status = 'Approved';
-    select approved_qty into gtp_qty from public.approvals
+    select max(coalesce(approved_qty, item.loa_qty)) into gtp_qty from public.approvals
       where item_sl = new.item_sl and kind = 'gtp' and status = 'Approved';
     if vendor_qty is null or gtp_qty is null then
       raise exception 'Approve the vendor and the GTP before offering inspection';

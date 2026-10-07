@@ -77,6 +77,7 @@ let sessionUser = null;
 let user = { name: '', role: '', active: false };
 let people = [];
 let boqItems = [];
+let gtpApprovals = [];
 let dailyLogs = [];
 let dispatchInstructions = [];
 let inspectionOffers = [];
@@ -181,6 +182,7 @@ async function refresh() {
 
 function adopt(data) {
   boqItems = data.items;
+  gtpApprovals = data.approvals || [];
   dailyLogs = data.logs;
   dispatchInstructions = data.dis;
   inspectionOffers = data.offers;
@@ -408,6 +410,10 @@ function renderGtp() {
     : 'New submission sends one letter for many materials: fill the reference once and tick the items it covers.';
   const body = gtpTab === 'letters' ? lettersTable(groups) : approvalTable(rows, kind);
   const stats = gtpStats(rows);
+  const addBtn = user.role === 'Admin'
+    ? `<button type="button" class="ghost" data-action="open-entry" data-mode="new">+ Add new material item</button>`
+    : '';
+
   return `
     ${head('GTP / Vendor', hint)}
     <div class="gtp-stats">
@@ -418,7 +424,10 @@ function renderGtp() {
     </div>
     <div class="tab-row">
       ${tabBar('gtp', [['vendor', 'Vendor approval'], ['gtp', 'GTP'], ['letters', `By letter (${groups.length})`]], gtpTab)}
-      ${canSubmit ? `<button type="button" class="primary" id="gtp-new-submission" data-action="batch-new" data-kind="${kind}">+ New submission</button>` : ''}
+      <div class="actions" style="display:flex; gap:8px; align-items:center;">
+        ${addBtn}
+        ${canSubmit ? `<button type="button" class="primary" id="gtp-new-submission" data-action="batch-new" data-kind="${kind}">+ New submission</button>` : ''}
+      </div>
     </div>
     ${body}
   `;
@@ -457,16 +466,15 @@ function letterKey(kind, letterNo) {
 // One letter reference groups every item submitted under it, per kind.
 function letterGroups() {
   const map = new Map();
-  boqItems.filter(isMaterial).forEach((item) => {
-    ['vendor', 'gtp'].forEach((kind) => {
-      const record = approvalRecord(item, kind);
-      if (!record.letterNo || record.status === 'Pending Submission') return;
-      const key = letterKey(kind, record.letterNo);
-      if (!map.has(key)) map.set(key, { key, kind, letterNo: record.letterNo, subDate: record.subDate || '', rows: [] });
-      const group = map.get(key);
-      group.rows.push({ item, record });
-      if (record.subDate && (!group.subDate || record.subDate < group.subDate)) group.subDate = record.subDate;
-    });
+  gtpApprovals.forEach((record) => {
+    if (!record.letterNo || record.status === 'Pending Submission') return;
+    const item = findItem(record.itemSl);
+    if (!item || !isMaterial(item)) return;
+    const key = letterKey(record.kind, record.letterNo);
+    if (!map.has(key)) map.set(key, { key, kind: record.kind, letterNo: record.letterNo, subDate: record.subDate || '', rows: [] });
+    const group = map.get(key);
+    group.rows.push({ item, record });
+    if (record.subDate && (!group.subDate || record.subDate < group.subDate)) group.subDate = record.subDate;
   });
   return [...map.values()]
     .map((group) => ({
@@ -528,20 +536,78 @@ function approvalTable(rows, kind) {
   const headers = ['Sl', 'Material', 'Vendor', 'Letter no.', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Approved Qty'), numHead('Delivered Qty'), 'Submitted', 'Decision'];
   if (user.role === 'Admin') headers.push('');
   return table(headers, rows.map((item) => {
-    const record = approvalRecord(item, kind);
+    const records = itemApprovals(item, kind);
     const submitLabel = kind === 'gtp' ? 'Submit GTP' : 'Submit letter';
-    const delBtn = (user.role === 'Admin' && record.status !== 'Pending Submission')
+    const primaryRecord = approvalRecord(item, kind);
+
+    let vendorHtml = '—';
+    if (records.length) {
+      const vendorNames = [...new Set(records.map((r) => r.vendor).filter(Boolean))];
+      if (vendorNames.length > 1) {
+        vendorHtml = vendorNames.map((v) => `<div class="multi-cell-item"><strong>${esc(v)}</strong></div>`).join('');
+      } else if (vendorNames.length === 1) {
+        vendorHtml = esc(vendorNames[0]);
+      }
+    }
+
+    let letterHtml = '—';
+    if (records.length) {
+      const withLetters = records.filter((r) => r.letterNo);
+      if (withLetters.length > 1) {
+        letterHtml = withLetters.map((r) => `
+          <div class="multi-cell-item">
+            <button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(kind, r.letterNo))}">
+              <strong>${esc(r.letterNo)}</strong>
+            </button>
+            ${r.vendor ? `<span class="meta">(${esc(r.vendor)})</span>` : ''}
+          </div>
+        `).join('');
+      } else if (withLetters.length === 1) {
+        letterHtml = `<button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(kind, withLetters[0].letterNo))}">${esc(withLetters[0].letterNo)}</button>`;
+      }
+    }
+
+    let subDateHtml = '—';
+    if (records.length) {
+      const dates = records.map((r) => r.subDate ? isoToDmy(r.subDate) : '—');
+      if (dates.length > 1) {
+        subDateHtml = dates.map((d) => `<div class="multi-cell-item">${esc(d)}</div>`).join('');
+      } else {
+        subDateHtml = esc(dates[0]);
+      }
+    }
+
+    let decisionHtml = '—';
+    if (records.length > 1) {
+      decisionHtml = records.map((r) => `
+        <div class="multi-cell-item">
+          ${decisionCellContent(r)}
+        </div>
+      `).join('');
+    } else if (records.length === 1) {
+      decisionHtml = decisionCellContent(records[0]);
+    } else {
+      decisionHtml = decisionCellContent(blankApproval());
+    }
+
+    const delBtn = (user.role === 'Admin' && records.some((r) => r.status !== 'Pending Submission'))
       ? `<button type="button" class="tiny danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}">Delete</button>`
       : '';
+
+    const queryParts = [
+      searchText(item, materialName(item)),
+      ...records.map((r) => `${r.vendor} ${r.letterNo} ${r.status} ${r.memoNo} ${r.remarks}`)
+    ];
+
     return `
-      <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}" data-q="${esc(searchText(item, materialName(item), record.vendor, record.letterNo, record.status, record.memoNo, record.remarks))}">
+      <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}" data-q="${esc(queryParts.join(' '))}">
         <td>${item.slNo}</td>
-        <td class="desc" title="${esc(item.description)}">${nameButton(item, `data-id="${kind}"`)} ${submitAction(item, kind, record, submitLabel)}</td>
-        <td>${esc(record.vendor || '—')}</td>
-        <td>${record.letterNo ? `<button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(kind, record.letterNo))}">${esc(record.letterNo)}</button>` : '—'}</td>
-        ${qtyCells(item, record)}
-        <td>${esc(record.subDate ? isoToDmy(record.subDate) : '—')}</td>
-        ${decisionCell(record)}
+        <td class="desc" title="${esc(item.description)}">${nameButton(item, `data-id="${kind}"`)} ${submitAction(item, kind, primaryRecord, submitLabel)}</td>
+        <td>${vendorHtml}</td>
+        <td>${letterHtml}</td>
+        ${qtyCells(item, primaryRecord)}
+        <td>${subDateHtml}</td>
+        <td class="decision">${decisionHtml}</td>
         ${user.role === 'Admin' ? `<td class="row-actions">${delBtn}</td>` : ''}
       </tr>
     `;
@@ -861,7 +927,7 @@ function dialogContent() {
     const item = findItem(inspModal.sl);
     return item ? inspectModal(item) : '';
   }
-  if (entryModal && entryModal.page === currentPage) return entryModalHtml();
+  if (entryModal) return entryModalHtml();
   return null;
 }
 
@@ -1170,7 +1236,7 @@ function offerNote(item) {
 
 function openEntry(sl, id, mode) {
   inspModal = null;
-  if (currentPage === 'gtp') prepareGtp(sl, id);
+  if (currentPage === 'gtp') prepareGtp(sl, id, mode);
   else if (currentPage === 'billing') prepareBill(id, mode);
   else if (currentPage === 'daily') prepareDaily(sl, id);
   else if (currentPage === 'receive') prepareReceive(sl, id);
@@ -1184,7 +1250,11 @@ function openEntry(sl, id, mode) {
   paint();
 }
 
-function prepareGtp(sl, id) {
+function prepareGtp(sl, id, mode) {
+  if (mode === 'new' && (isAdmin() || isVendor())) {
+    entryModal = { page: 'gtp', sl: 0, id: '', mode: 'newMaterial' };
+    return;
+  }
   const kind = id === 'gtp' || id === 'vendor' ? id : (gtpTab === 'gtp' ? 'gtp' : 'vendor');
   const item = findItem(sl);
   const record = item ? approvalRecord(item, kind) : null;
@@ -1306,27 +1376,57 @@ function boqFields(item) {
   `;
 }
 
+function gtpNewMaterialModal() {
+  return `
+    ${modalTitle('New Material Item', 'Enter the material description, unit, LOA quantity, and optional survey quantity.')}
+    <form class="entry entry-plain" id="form-boq">
+      <input type="hidden" name="item" value="0" />
+      <input type="hidden" name="part" value="Part-A (Material)" />
+      <input type="hidden" name="category" value="Material" />
+      <input type="hidden" name="rate" value="0" />
+      
+      <label class="span-2">Material Name / Description
+        <input name="description" required placeholder="e.g. 33kV 3C x 300 sqmm XLPE Cable" />
+      </label>
+      <label>Unit
+        <input name="unit" required placeholder="M / KM / SET / NOS" />
+      </label>
+      <label>LOA Qty
+        <input name="loa" type="number" min="0" step="any" required placeholder="LOA Quantity" />
+      </label>
+      <label>Survey Qty
+        <input name="survey" type="number" min="0" step="any" placeholder="Survey Qty (optional)" />
+      </label>
+      <div class="actions span-all">
+        <button class="primary" type="submit">Save Material Item</button>
+      </div>
+      <p class="form-msg span-all"></p>
+    </form>
+  `;
+}
+
 function gtpModal() {
+  if (entryModal.mode === 'newMaterial') return gtpNewMaterialModal();
   if (entryModal.mode === 'batch') return gtpBatchModal();
   if (entryModal.mode === 'letter') return gtpLetterModal();
   const item = findItem(entryModal.sl);
   if (!item) return '';
   const kind = entryModal.id === 'gtp' ? 'gtp' : 'vendor';
-  const record = approvalRecord(item, kind);
+  const records = itemApprovals(item, kind);
+  const primaryRecord = approvalRecord(item, kind);
   const label = kind === 'gtp' ? 'GTP' : 'Vendor';
   const sub = `${label} · LOA ${qtyText(item.loaQty, item.unit)} · Survey ${surveyText(item)}`;
-  let body = gtpNote(record);
+  let body = gtpNotes(records, item, kind);
   if (entryModal.mode === 'decision') body = gtpDecisionForm(item, kind);
-  const canSubmit = (isVendor() || isAdmin()) && record.status !== 'Approved';
-  const canDecide = (isRegion() || isAdmin()) && GTP_WAITING.includes(record.status);
+  const canSubmit = isVendor() || isAdmin();
+  const canDecide = (isRegion() || isAdmin()) && records.some((r) => GTP_WAITING.includes(r.status));
   return `
     ${modalTitle(`Sl ${item.slNo} · ${esc(materialName(item))}`, sub)}
     ${body}
     <div class="actions">
-      ${record.letterNo ? `<button type="button" class="ghost" data-action="open-letter" data-id="${esc(letterKey(kind, record.letterNo))}">Open letter ${esc(record.letterNo)}</button>` : ''}
-      ${canSubmit ? `<button type="button" class="ghost" data-action="batch-new" data-kind="${kind}" data-sl="${item.slNo}">Submit</button>` : ''}
+      ${canSubmit ? `<button type="button" class="ghost" data-action="batch-new" data-kind="${kind}" data-sl="${item.slNo}">Submit new letter</button>` : ''}
       ${entryModal.mode !== 'decision' && canDecide ? `<button type="button" class="ghost" data-action="entry-mode" data-mode="decision">Decision</button>` : ''}
-      ${user.role === 'Admin' && record.status !== 'Pending Submission' ? `<button type="button" class="ghost danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}">Delete request</button>` : ''}
+      ${user.role === 'Admin' && records.length ? `<button type="button" class="ghost danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}">Delete all for this item</button>` : ''}
     </div>
   `;
 }
@@ -1539,13 +1639,27 @@ function gtpDecisionForm(item, kind) {
   `;
 }
 
-function gtpNote(record) {
-  const lines = [record.status || 'Not submitted'];
-  if (record.vendor) lines.push(record.vendor);
-  if (record.letterNo) lines.push(record.letterNo);
-  if (record.memoNo || record.actionDate) lines.push([record.actionDate, record.memoNo].filter(Boolean).join(' · '));
-  if (record.remarks) lines.push(record.remarks);
-  return `<p class="quiet">${lines.map((line) => esc(line)).join('<br>')}</p>`;
+function gtpNotes(records, item, kind) {
+  if (!records || !records.length) return '<p class="quiet">Not submitted yet.</p>';
+  return records.map((record) => {
+    const lines = [record.status || 'Not submitted'];
+    if (record.vendor) lines.push(`Vendor: ${record.vendor}`);
+    if (record.letterNo) lines.push(`Letter: ${record.letterNo}`);
+    if (record.subDate) lines.push(`Submitted: ${isoToDmy(record.subDate)}`);
+    if (record.memoNo || record.actionDate) lines.push([record.actionDate ? isoToDmy(record.actionDate) : '', record.memoNo ? `Memo: ${record.memoNo}` : ''].filter(Boolean).join(' · '));
+    if (record.remarks) lines.push(`Remarks: ${record.remarks}`);
+    const delBtn = user.role === 'Admin' && record.letterNo
+      ? `<br><button type="button" class="tiny danger" style="margin-top:4px;" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}" data-letter="${esc(record.letterNo)}">Delete letter ${esc(record.letterNo)}</button>`
+      : '';
+    const openBtn = record.letterNo
+      ? `<br><button type="button" class="tiny" style="margin-top:4px;" data-action="open-letter" data-id="${esc(letterKey(kind, record.letterNo))}">Open letter ${esc(record.letterNo)}</button>`
+      : '';
+    return `
+      <div class="gtp-note-card">
+        <p class="quiet" style="margin:0;">${lines.map((line) => esc(line)).join('<br>')}${openBtn}${delBtn}</p>
+      </div>
+    `;
+  }).join('');
 }
 
 function billModal() {
@@ -2035,7 +2149,7 @@ function onClick(event) {
   if (action === 'pay-bill') markBillPaid(button.dataset.id);
   if (action === 'verify-log') verifyLog(button.dataset.id);
   if (action === 'delete-boq') deleteBoq(Number(button.dataset.sl));
-  if (action === 'delete-approval') deleteApproval(Number(button.dataset.sl), button.dataset.kind);
+  if (action === 'delete-approval') deleteApproval(Number(button.dataset.sl), button.dataset.kind, button.dataset.letter);
   if (action === 'delete-approval-letter') deleteApprovalLetter(button.dataset.kind, button.dataset.letter);
   if (action === 'delete-invoice') deleteInvoice(button.dataset.id);
   if (action === 'auth-mode') {
@@ -2323,12 +2437,13 @@ async function saveBoq(form) {
   const sl = Number(field(form, 'item'));
   const description = field(form, 'description');
   const unit = field(form, 'unit');
-  const category = field(form, 'category');
-  const part = field(form, 'part');
+  const category = field(form, 'category') || 'Material';
+  const part = field(form, 'part') || 'Part-A (Material)';
   const loa = Number(field(form, 'loa'));
-  const rate = Number(field(form, 'rate'));
+  const rateStr = field(form, 'rate');
+  const rate = rateStr !== '' && !isNaN(Number(rateStr)) ? Number(rateStr) : 0;
   if (!description || !unit || !category || !part || !(loa >= 0) || !(rate >= 0)) {
-    return setMsg(form, 'Enter part, category, unit, description, LOA quantity, and rate.');
+    return setMsg(form, 'Enter material name, unit, and LOA quantity.');
   }
   const existing = sl === 0 ? null : findItem(sl);
   if (sl !== 0 && !existing) return setMsg(form, 'Item not found.');
@@ -2398,14 +2513,15 @@ async function deleteBoq(slNo) {
   paint();
 }
 
-async function deleteApproval(slNo, kind) {
+async function deleteApproval(slNo, kind, letterNo) {
   if (user.role !== 'Admin') return;
   const item = findItem(slNo);
   if (!item) return;
   const label = kind === 'gtp' ? 'GTP' : 'Vendor approval';
-  if (!confirm(`Delete ${label} request for Sl ${slNo}?`)) return;
+  const desc = letterNo ? `letter ${letterNo} for Sl ${slNo}` : `${label} request for Sl ${slNo}`;
+  if (!confirm(`Delete ${desc}?`)) return;
   try {
-    await remote.removeApproval(slNo, kind);
+    await remote.removeApproval(slNo, kind, letterNo);
     await pullRegister();
     entryModal = null;
     toast(`${label} request deleted`);
@@ -3179,12 +3295,22 @@ function blankApproval(current) {
   };
 }
 
+function itemApprovals(item, kind) {
+  if (!item || !item.slNo) return [];
+  const sl = Number(item.slNo);
+  return gtpApprovals.filter((row) => Number(row.itemSl) === sl && (!kind || row.kind === kind));
+}
+
 function approvalRecord(item, kind) {
-  return kind === 'gtp' ? item.pipeline.gtpDoc : item.pipeline.vendorAppr;
+  const records = itemApprovals(item, kind);
+  if (!records.length) return blankApproval();
+  const approved = records.find((r) => r.status === 'Approved');
+  if (approved) return approved;
+  return records[records.length - 1];
 }
 
 function submitAction(item, kind, record, label) {
-  if ((!isVendor() && !isAdmin()) || record.status === 'Approved') return '';
+  if (!isVendor() && !isAdmin()) return '';
   return `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}">${esc(label)}</button>`;
 }
 
@@ -3210,10 +3336,12 @@ function officeName(className) {
 }
 
 function approvedBoqQty(item) {
-  const vendor = item.pipeline?.vendorAppr;
-  const gtp = item.pipeline?.gtpDoc;
-  if (!vendor || !gtp || vendor.status !== 'Approved' || gtp.status !== 'Approved') return 0;
-  const stored = Number(vendor.approvedQty) || Number(gtp.approvedQty);
+  const vendorApprs = itemApprovals(item, 'vendor').filter((r) => r.status === 'Approved');
+  const gtpDocs = itemApprovals(item, 'gtp').filter((r) => r.status === 'Approved');
+  if (!vendorApprs.length || !gtpDocs.length) return 0;
+  const vQty = Math.max(...vendorApprs.map((r) => Number(r.approvedQty) || Number(item.loaQty) || 0));
+  const gQty = Math.max(...gtpDocs.map((r) => Number(r.approvedQty) || Number(item.loaQty) || 0));
+  const stored = Math.min(vQty, gQty);
   return stored > 0 ? stored : Number(item.loaQty) || 0;
 }
 
@@ -3459,14 +3587,18 @@ function qtyCells(item, record) {
   `;
 }
 
-function decisionCell(record) {
+function decisionCellContent(record) {
   const lines = [];
   if (record.actionDate || record.memoNo) {
     lines.push([record.actionDate ? isoToDmy(record.actionDate) : '', record.memoNo].filter(Boolean).join(' · '));
   }
   if (record.remarks) lines.push(record.remarks);
   const detail = lines.map((line) => `<span class="meta">${esc(line)}</span>`).join('');
-  return `<td class="decision">${approvalBadge(record)}${detail}</td>`;
+  return `${approvalBadge(record)}${detail}`;
+}
+
+function decisionCell(record) {
+  return `<td class="decision">${decisionCellContent(record)}</td>`;
 }
 
 function approvalBadge(record) {
