@@ -1096,5 +1096,42 @@ where confirmation_token is null
    or is_sso_user is null
    or is_anonymous is null;
 
+create or replace function public.admin_rectify_approval(
+  p_old_kind text,
+  p_old_letter_no text,
+  p_new_kind text,
+  p_new_letter_no text,
+  p_new_vendor text,
+  p_new_sub_date date default null,
+  p_item_sl integer default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  caller_role text;
+begin
+  select role into caller_role from public.profiles where id = auth.uid();
+  if caller_role is distinct from 'Admin' then
+    raise exception 'Only Admin can rectify approval tags';
+  end if;
+
+  update public.approvals
+  set
+    kind = trim(p_new_kind),
+    letter_no = trim(p_new_letter_no),
+    vendor = trim(p_new_vendor),
+    sub_date = coalesce(p_new_sub_date, sub_date)
+  where kind = p_old_kind
+    and letter_no = p_old_letter_no
+    and (p_item_sl is null or item_sl = p_item_sl);
+end;
+$$;
+
+grant execute on function public.admin_rectify_approval(text, text, text, text, text, date, integer) to authenticated;
+
+
 
 

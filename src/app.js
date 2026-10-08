@@ -1597,17 +1597,58 @@ function gtpBatchPreviewModal(draft) {
 
 function gtpLetterModal() {
   const group = findGroup(entryModal.id);
+  if (entryModal?.mode === 'rectifyLetter') return gtpRectifyLetterModal(group);
   if (!group) return `${modalTitle('Letter not found', 'It may have been re-submitted under a new reference.')}`;
   const canDecide = (isRegion() || isAdmin()) && group.waiting > 0;
   const canSubmit = isVendor() || isAdmin();
   const sub = `${kindLabel(group.kind)} · Submitted ${group.subDate ? isoToDmy(group.subDate) : '—'} · ${group.rows.length} ${group.rows.length === 1 ? 'material' : 'materials'}`;
-  const delBtn = user.role === 'Admin'
-    ? `<div class="actions" style="margin-top: 12px;"><button type="button" class="ghost danger" data-action="delete-approval-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Delete letter</button></div>`
+  const adminActions = user.role === 'Admin'
+    ? `<div class="actions" style="margin-top: 12px; display: flex; gap: 8px;">
+         <button type="button" class="ghost" data-action="open-rectify-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">✏️ Rectify Letter Tagging</button>
+         <button type="button" class="ghost danger" data-action="delete-approval-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Delete letter</button>
+       </div>`
     : '';
   return `
     ${modalTitle(`${kindBadge(group.kind)} ${esc(group.letterNo)}`, esc(sub))}
     ${canDecide ? letterDecisionForm(group) : letterSummary(group)}
-    ${delBtn}
+    ${adminActions}
+  `;
+}
+
+function gtpRectifyLetterModal(group) {
+  if (!group) return modalTitle('Letter not found', 'Cannot rectify missing letter.');
+  const vendorVal = group.rows[0]?.record?.vendor || '';
+  return `
+    ${modalTitle(`Rectify Tagging: ${esc(group.letterNo)}`, 'Admin tool to rectify mistaken tagging (Vendor vs GTP), letter reference number, vendor name, or date.')}
+    <form class="entry entry-plain" id="form-rectify-letter">
+      <input type="hidden" name="oldKind" value="${esc(group.kind)}" />
+      <input type="hidden" name="oldLetterNo" value="${esc(group.letterNo)}" />
+
+      <label class="span-2">Approval Type / Tagging
+        <select name="newKind" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          <option value="vendor"${group.kind === 'vendor' ? ' selected' : ''}>Vendor Approval (kind = vendor)</option>
+          <option value="gtp"${group.kind === 'gtp' ? ' selected' : ''}>GTP Approval (kind = gtp)</option>
+        </select>
+      </label>
+
+      <label>Letter Reference No.
+        <input name="newLetterNo" required value="${esc(group.letterNo)}" placeholder="e.g. TE-HO/RM/Malda_UG/025" />
+      </label>
+
+      <label>Vendor / Manufacturer Name
+        <input name="newVendor" required value="${esc(vendorVal)}" placeholder="e.g. Polycab India Ltd" />
+      </label>
+
+      <label class="span-2">Submission Date
+        <input name="newSubDate" type="date" value="${esc(group.subDate || '')}" />
+      </label>
+
+      <div class="actions span-all" style="display: flex; gap: 8px; margin-top: 12px;">
+        <button class="primary" type="submit">Save Rectified Tagging</button>
+        <button type="button" class="ghost" data-action="cancel-rectify-letter">Cancel</button>
+      </div>
+      <p class="form-msg span-all"></p>
+    </form>
   `;
 }
 
@@ -1709,15 +1750,18 @@ function gtpNotes(records, item, kind) {
     if (record.subDate) lines.push(`Submitted: ${isoToDmy(record.subDate)}`);
     if (record.memoNo || record.actionDate) lines.push([record.actionDate ? isoToDmy(record.actionDate) : '', record.memoNo ? `Memo: ${record.memoNo}` : ''].filter(Boolean).join(' · '));
     if (record.remarks) lines.push(`Remarks: ${record.remarks}`);
-    const delBtn = user.role === 'Admin' && record.letterNo
-      ? `<br><button type="button" class="tiny danger" style="margin-top:4px;" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}" data-letter="${esc(record.letterNo)}">Delete letter ${esc(record.letterNo)}</button>`
+    const adminBtns = user.role === 'Admin' && record.letterNo
+      ? `<br><div style="display:flex; gap:6px; margin-top:4px;">
+           <button type="button" class="tiny" data-action="open-rectify-letter" data-kind="${kind}" data-letter="${esc(record.letterNo)}">✏️ Rectify tagging</button>
+           <button type="button" class="tiny danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}" data-letter="${esc(record.letterNo)}">Delete</button>
+         </div>`
       : '';
     const openBtn = record.letterNo
       ? `<br><button type="button" class="tiny" style="margin-top:4px;" data-action="open-letter" data-id="${esc(letterKey(kind, record.letterNo))}">Open letter ${esc(record.letterNo)}</button>`
       : '';
     return `
       <div class="gtp-note-card">
-        <p class="quiet" style="margin:0;">${lines.map((line) => esc(line)).join('<br>')}${openBtn}${delBtn}</p>
+        <p class="quiet" style="margin:0;">${lines.map((line) => esc(line)).join('<br>')}${openBtn}${adminBtns}</p>
       </div>
     `;
   }).join('');
@@ -2196,6 +2240,18 @@ function onClick(event) {
     paint();
     return;
   }
+  if (action === 'open-rectify-letter') {
+    const key = letterKey(button.dataset.kind, button.dataset.letter);
+    entryModal = { page: 'gtp', sl: 0, id: key, mode: 'rectifyLetter' };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'cancel-rectify-letter') {
+    if (entryModal) entryModal.mode = 'letter';
+    paint();
+    return;
+  }
   if (action === 'batch-cancel-preview') {
     if (entryModal && entryModal.draft) {
       entryModal.draft.previewing = false;
@@ -2252,6 +2308,7 @@ function onSubmit(event) {
   if (form.id === 'form-login') signIn(form);
   if (form.id === 'form-signup') signUp(form);
   if (form.id === 'form-create-user') createUserAccount(form);
+  if (form.id === 'form-rectify-letter') saveRectifyLetter(form);
   if (form.id === 'form-boq') saveBoq(form);
   if (form.id === 'form-gtp-batch') {
     // Enter inside the filter box should filter, not submit the letter.
@@ -2642,6 +2699,31 @@ async function deleteApprovalLetter(kind, letterNo) {
     paint();
   } catch (error) {
     toast(error.message || 'Could not delete');
+  }
+}
+
+async function saveRectifyLetter(form) {
+  if (user.role !== 'Admin') return;
+  const oldKind = field(form, 'oldKind');
+  const oldLetterNo = field(form, 'oldLetterNo');
+  const newKind = field(form, 'newKind');
+  const newLetterNo = field(form, 'newLetterNo');
+  const newVendor = field(form, 'newVendor');
+  const newSubDate = field(form, 'newSubDate');
+
+  if (!newLetterNo || !newVendor) {
+    return setMsg(form, 'Please enter Letter Reference No. and Vendor Name.');
+  }
+
+  try {
+    setMsg(form, 'Saving rectified tagging…');
+    await remote.rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo, newVendor, newSubDate);
+    await pullRegister();
+    entryModal = null;
+    toast(`Letter ${newLetterNo} tagging rectified!`);
+    paint();
+  } catch (error) {
+    setMsg(form, error.message || 'Could not rectify tagging');
   }
 }
 

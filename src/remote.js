@@ -341,6 +341,31 @@ export async function removeApprovalLetter(kind, letterNo) {
   if (error) throw wrap(error);
 }
 
+export async function rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo, newVendor, newSubDate = null, itemSl = null) {
+  const { error } = await supabase.rpc('admin_rectify_approval', {
+    p_old_kind: oldKind,
+    p_old_letter_no: oldLetterNo,
+    p_new_kind: newKind,
+    p_new_letter_no: newLetterNo,
+    p_new_vendor: newVendor,
+    p_new_sub_date: newSubDate || null,
+    p_item_sl: itemSl || null
+  });
+
+  if (!error) return;
+
+  let query = supabase.from('approvals').update({
+    kind: newKind,
+    letter_no: newLetterNo,
+    vendor: newVendor,
+    ...(newSubDate ? { sub_date: newSubDate } : {})
+  }).eq('kind', oldKind).eq('letter_no', oldLetterNo);
+  if (itemSl) query = query.eq('item_sl', itemSl);
+
+  const { error: fallErr } = await query;
+  if (fallErr) throw wrap(fallErr);
+}
+
 export async function removeInvoice(id) {
   const { error } = await supabase.from('invoices').delete().eq('id', id);
   if (error) throw wrap(error);
