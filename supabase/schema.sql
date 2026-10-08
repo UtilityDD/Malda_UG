@@ -911,3 +911,146 @@ begin
     end;
   end loop;
 end $$;
+
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.admin_set_user_pin(target_user_id uuid, new_pin text)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  caller_role text;
+begin
+  select role into caller_role from public.profiles where id = auth.uid();
+  if caller_role is distinct from 'Admin' then
+    raise exception 'Only Admin can set or reset user PIN';
+  end if;
+
+  if length(trim(new_pin)) < 4 then
+    raise exception 'PIN or Password must be at least 4 characters long';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(trim(new_pin), extensions.gen_salt('bf'))
+  where id = target_user_id;
+end;
+$$;
+
+grant execute on function public.admin_set_user_pin(uuid, text) to authenticated;
+
+create or replace function public.admin_create_user(
+  p_name text,
+  p_user_id text,
+  p_pin text,
+  p_role text default 'Vendor'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  caller_role text;
+  v_user_id uuid;
+  v_email text;
+  v_encrypted_pw text;
+begin
+  select role into caller_role from public.profiles where id = auth.uid();
+  if caller_role is distinct from 'Admin' then
+    raise exception 'Only Admin can create user accounts';
+  end if;
+
+  if trim(p_name) = '' or trim(p_user_id) = '' or length(trim(p_pin)) < 4 then
+    raise exception 'Invalid input. Provide Name, User ID, and PIN (min 4 chars).';
+  end if;
+
+  if position('@' in p_user_id) > 0 then
+    v_email := lower(trim(p_user_id));
+  else
+    v_email := lower(trim(p_user_id)) || '@malda-ug.gov.in';
+  end if;
+
+  if exists (select 1 from auth.users where lower(email) = v_email) then
+    raise exception 'A user with User ID or Email % already exists', v_email;
+  end if;
+
+  v_user_id := gen_random_uuid();
+  v_encrypted_pw := extensions.crypt(trim(p_pin), extensions.gen_salt('bf'));
+
+  insert into auth.users (
+    id,
+    instance_id,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at,
+    aud,
+    role
+  ) values (
+    v_user_id,
+    '00000000-0000-0000-0000-000000000000'::uuid,
+    v_email,
+    v_encrypted_pw,
+    now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('name', trim(p_name)),
+    now(),
+    now(),
+    'authenticated',
+    'authenticated'
+  );
+
+  insert into auth.identities (
+    id,
+    user_id,
+    identity_data,
+    provider,
+    provider_id,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  ) values (
+    gen_random_uuid(),
+    v_user_id,
+    jsonb_build_object('sub', v_user_id::text, 'email', v_email),
+    'email',
+    v_user_id::text,
+    now(),
+    now(),
+    now()
+  );
+
+  insert into public.profiles (
+    id,
+    name,
+    email,
+    role,
+    active,
+    region_id,
+    vendor_id
+  ) values (
+    v_user_id,
+    trim(p_name),
+    v_email,
+    trim(p_role),
+    true,
+    'REG-MALDA',
+    case when trim(p_role) in ('Vendor', 'Turnkey') then 'VEND-512589' else 'VEND-NONE' end
+  ) on conflict (id) do update set
+    name = excluded.name,
+    email = excluded.email,
+    role = excluded.role,
+    active = true;
+
+  return jsonb_build_object('id', v_user_id, 'email', v_email, 'name', p_name, 'role', p_role);
+end;
+$$;
+
+grant execute on function public.admin_create_user(text, text, text, text) to authenticated;
+
+

@@ -283,17 +283,27 @@ function renderCurrent() {
 }
 
 function renderAuth() {
-  const signup = authMode === 'signup';
   return `
-    <form class="auth-card" id="${signup ? 'form-signup' : 'form-login'}">
-      <h1>${signup ? 'Create a login' : 'Sign in'}</h1>
-      <p>${signup ? 'Enter your details to register a new account.' : 'Sign in to access the project register.'}</p>
-      ${signup ? '<label>Name<input name="name" type="text" autocomplete="name" required /></label>' : ''}
-      <label>Email<input name="email" id="auth-email" type="email" autocomplete="username" required /></label>
-      <label>Password<input name="password" id="auth-password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required /></label>
+    <form class="auth-card" id="form-login">
+      <h1>Sign in to Malda UG Register</h1>
+      <p>Sign in using your User ID and PIN assigned by your Administrator.</p>
+      
+      <label>User ID / Email
+        <input name="email" id="auth-email" type="text" autocomplete="username" required placeholder="Enter your User ID or Email" />
+      </label>
+      
+      <label>PIN / Password
+        <input name="password" id="auth-password" type="password" autocomplete="current-password" required placeholder="Enter your PIN or password" />
+      </label>
+      
       <p class="form-msg"></p>
-      <button type="submit" class="primary">${signup ? 'Create login' : 'Sign in'}</button>
-      <button type="button" class="ghost" data-action="auth-mode" data-mode="${signup ? 'login' : 'signup'}">${signup ? 'I already have a login' : 'Create a login'}</button>
+      
+      <button type="submit" class="primary">Sign in</button>
+
+      <div style="margin-top: 14px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); line-height: 1.4;">
+        <strong style="color: var(--text); display: block; margin-bottom: 2px;">Need a Login or PIN Reset?</strong>
+        User accounts are created exclusively by the Project Administrator. Please contact your Administrator or Divisional Engineer to receive your User ID and PIN.
+      </div>
     </form>
   `;
 }
@@ -309,26 +319,77 @@ function renderWaiting() {
 }
 
 function renderUsers() {
-  const rows = people.map((person) => `
-    <tr>
-      <td><strong>${esc(person.name)}</strong><span class="meta">${esc(person.email)}</span></td>
-      <td>
-        <select data-person="${esc(person.id)}" data-field="role">
-          ${['Vendor', 'Region', 'Store', 'Viewer', 'Admin', 'Turnkey', 'WBSEDCL'].map((role) => `<option${role === person.role ? ' selected' : ''}>${role}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        <select data-person="${esc(person.id)}" data-field="active">
-          <option${person.active ? ' selected' : ''}>Active</option>
-          <option${!person.active ? ' selected' : ''}>Inactive</option>
-        </select>
-      </td>
-      <td><button type="button" class="tiny" data-action="save-person" data-id="${esc(person.id)}">Save</button></td>
-    </tr>
-  `);
+  const rows = people.map((person) => {
+    const isSelf = sessionUser?.id === person.id;
+    const shortId = person.email.endsWith('@malda-ug.gov.in')
+      ? person.email.replace('@malda-ug.gov.in', '')
+      : person.email;
+
+    return `
+      <tr>
+        <td>
+          <strong>${esc(person.name)}</strong>
+          <span class="meta">ID: <code>${esc(shortId)}</code> (${esc(person.email)})</span>
+        </td>
+        <td>
+          <select data-person="${esc(person.id)}" data-field="role">
+            ${['Vendor', 'Region', 'Store', 'Viewer', 'Admin', 'Turnkey', 'WBSEDCL'].map((r) => `<option${r === person.role ? ' selected' : ''}>${r}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select data-person="${esc(person.id)}" data-field="active">
+            <option${person.active ? ' selected' : ''}>Active</option>
+            <option${!person.active ? ' selected' : ''}>Inactive</option>
+          </select>
+        </td>
+        <td>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" class="tiny" data-action="save-person" data-id="${esc(person.id)}">Save</button>
+            <button type="button" class="tiny ghost" data-action="reset-pin" data-id="${esc(person.id)}" data-name="${esc(person.name)}">Reset PIN</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
   return `
-    ${head('People', 'Turn a login on and set the role. A person who is inactive can sign in, and cannot open the register.')}
-    ${table(['Name', 'Role', 'Access', ''], rows, 4, 'No logins yet.')}
+    ${head('People & Logins', 'Create user accounts with manual User ID, PIN, and Role. Manage existing user access, roles, and PINs.')}
+
+    <form class="auth-card" id="form-create-user" style="max-width: 100%; width: 100%; margin: 0 0 24px 0; box-shadow: none;">
+      <h2 style="margin: 0; font-size: 16px;">Create New User Account (Manual ID & PIN)</h2>
+      <p style="margin-top: 2px; font-size: 12px; color: var(--muted);">Manually specify User ID, PIN, Name, and Role. Account is created as Active by default.</p>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px;">
+        <label>Full Name
+          <input name="name" type="text" required placeholder="e.g. Tarun Enterprise" />
+        </label>
+        <label>User ID or Email
+          <input name="userId" type="text" required placeholder="e.g. user01 or name@malda.com" />
+        </label>
+        <label>PIN / Password
+          <input name="pin" type="text" required placeholder="e.g. 1234 or pin123" />
+        </label>
+        <label>User Role
+          <select name="role" required style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+            <option value="Vendor">Vendor</option>
+            <option value="Region">Region (WBSEDCL DE)</option>
+            <option value="Store">Store Keeper</option>
+            <option value="Turnkey">Turnkey Contractor</option>
+            <option value="WBSEDCL">WBSEDCL Engineer</option>
+            <option value="Viewer">Viewer (Read Only)</option>
+            <option value="Admin">Admin (Full Access)</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="form-msg" style="margin-top: 8px;"></p>
+      <div style="margin-top: 8px; display: flex; gap: 8px;">
+        <button type="submit" class="primary" style="width: auto; padding: 8px 16px;">Create User Account</button>
+      </div>
+    </form>
+
+    <h2 style="font-size: 16px; margin: 16px 0 8px;">Existing User Accounts (${people.length})</h2>
+    ${table(['Name & User ID', 'Role', 'Access Status', 'Actions'], rows, 4, 'No logins yet.')}
   `;
 }
 
@@ -2158,6 +2219,7 @@ function onClick(event) {
   }
   if (action === 'sign-out') remote.signOut();
   if (action === 'save-person') savePerson(button.dataset.id);
+  if (action === 'reset-pin') resetUserPin(button.dataset.id, button.dataset.name);
   if (action === 'fill-demo') {
     const email = button.dataset.email;
     const pass = button.dataset.pass;
@@ -2189,6 +2251,7 @@ function onSubmit(event) {
   event.preventDefault();
   if (form.id === 'form-login') signIn(form);
   if (form.id === 'form-signup') signUp(form);
+  if (form.id === 'form-create-user') createUserAccount(form);
   if (form.id === 'form-boq') saveBoq(form);
   if (form.id === 'form-gtp-batch') {
     // Enter inside the filter box should filter, not submit the letter.
@@ -2420,6 +2483,42 @@ async function savePerson(id) {
   }
   toast('Person saved');
   paint();
+}
+
+async function createUserAccount(form) {
+  if (user.role !== 'Admin') return;
+  const name = field(form, 'name');
+  const userId = field(form, 'userId');
+  const pin = field(form, 'pin');
+  const role = field(form, 'role') || 'Vendor';
+
+  if (!name || !userId || !pin) {
+    return setMsg(form, 'Please enter Full Name, User ID, and PIN.');
+  }
+
+  try {
+    setMsg(form, 'Creating user account…');
+    await remote.createAdminUser(name, userId, pin, role, true);
+    setMsg(form, '');
+    toast(`User account "${name}" created!`);
+    await pullRegister();
+    paint();
+  } catch (error) {
+    setMsg(form, error.message || 'Failed to create user account');
+  }
+}
+
+async function resetUserPin(id, name) {
+  if (user.role !== 'Admin') return;
+  const newPin = prompt(`Enter new PIN or Password for ${name || 'user'}:`);
+  if (!newPin || !newPin.trim()) return;
+
+  try {
+    await remote.adminSetUserPin(id, newPin.trim());
+    toast(`PIN for ${name || 'user'} has been updated!`);
+  } catch (error) {
+    toast(error.message || 'Could not reset PIN');
+  }
 }
 
 async function finish(form, run) {

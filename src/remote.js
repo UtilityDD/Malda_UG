@@ -20,19 +20,39 @@ export function watchAuth(onSession) {
   });
 }
 
-export async function signIn(email, password) {
+export function normalizeUserId(input) {
+  if (!input) return '';
+  const trimmed = input.trim();
+  if (trimmed.includes('@')) return trimmed.toLowerCase();
+  return `${trimmed.toLowerCase()}@malda-ug.gov.in`;
+}
+
+export function normalizePin(pinInput) {
+  if (!pinInput) return '';
+  const trimmed = String(pinInput).trim();
+  if (trimmed.length < 6) {
+    return (trimmed + '000000').slice(0, 6);
+  }
+  return trimmed;
+}
+
+export async function signIn(userIdOrEmail, pinOrPassword) {
+  const email = normalizeUserId(userIdOrEmail);
+  const password = normalizePin(pinOrPassword);
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
 }
 
 export async function ensureDemoAccount(email, password, name, role, regionId = 'REG-MALDA', vendorId = 'VEND-512589') {
-  const { data: signData, error: signError } = await supabase.auth.signInWithPassword({ email, password });
+  const normEmail = normalizeUserId(email);
+  const normPass = normalizePin(password);
+  const { data: signData, error: signError } = await supabase.auth.signInWithPassword({ email: normEmail, password: normPass });
   if (!signError && signData?.user) {
     const userId = signData.user.id;
     await supabase.from('profiles').upsert({
       id: userId,
       name,
-      email,
+      email: normEmail,
       role,
       region_id: regionId,
       vendor_id: vendorId,
@@ -42,8 +62,8 @@ export async function ensureDemoAccount(email, password, name, role, regionId = 
   }
 
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
+    email: normEmail,
+    password: normPass,
     options: { data: { name } }
   });
 
@@ -56,7 +76,7 @@ export async function ensureDemoAccount(email, password, name, role, regionId = 
     await supabase.from('profiles').upsert({
       id: userId,
       name,
-      email,
+      email: normEmail,
       role,
       region_id: regionId,
       vendor_id: vendorId,
@@ -64,7 +84,7 @@ export async function ensureDemoAccount(email, password, name, role, regionId = 
     }, { onConflict: 'id' });
 
     if (!signUpData.session) {
-      const { error: reSignErr } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: reSignErr } = await supabase.auth.signInWithPassword({ email: normEmail, password: normPass });
       if (reSignErr) {
         throw new Error('Demo account registered in Supabase. Check your inbox if email confirmation is enabled, or sign in again.');
       }
@@ -72,7 +92,9 @@ export async function ensureDemoAccount(email, password, name, role, regionId = 
   }
 }
 
-export async function signUp(name, email, password) {
+export async function signUp(name, userIdOrEmail, pinOrPassword) {
+  const email = normalizeUserId(userIdOrEmail);
+  const password = normalizePin(pinOrPassword);
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -80,8 +102,87 @@ export async function signUp(name, email, password) {
   });
   if (error) throw new Error(error.message);
   if (!data.session) {
-    throw new Error('Check your email to confirm this login, then sign in.');
+    throw new Error('Account created! Admin needs to activate your login before access is granted.');
   }
+}
+
+export async function createAdminUser(name, userIdInput, pinInput, role, active = true) {
+  const email = normalizeUserId(userIdInput);
+  const password = normalizePin(pinInput);
+
+  // Try direct Postgres RPC creation first (bypasses GoTrue SMTP rate limits completely!)
+  const { data: rpcData, error: rpcError } = await supabase.rpc('admin_create_user', {
+    p_name: name.trim(),
+    p_user_id: userIdInput.trim(),
+    p_pin: password,
+    p_role: role
+  });
+
+  if (!rpcError && rpcData) {
+    return rpcData;
+  }
+
+  if (rpcError && rpcError.message && rpcError.message.includes('already exists')) {
+    throw new Error(rpcError.message);
+  }
+
+  // Fallback to client side signUp if RPC function is not yet created in SQL
+  const { data: existingProfile } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .eq('email', email.toLowerCase())
+    .maybeSingle();
+
+  if (existingProfile) {
+    throw new Error(`A user with User ID / Email "${userIdInput}" already exists.`);
+  }
+
+  const tempClient = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+
+  const { data: signUpData, error: signUpError } = await tempClient.auth.signUp({
+    email,
+    password,
+    options: { data: { name: name.trim() } }
+  });
+
+  if (signUpError) {
+    if (signUpError.message?.toLowerCase().includes('rate limit')) {
+      throw new Error('Supabase email rate limit hit. Run `supabase/schema.sql` in your Supabase SQL Editor to enable direct Admin user creation without emails.');
+    }
+    throw new Error(signUpError.message || 'Could not create user account in auth system');
+  }
+
+  const newUserId = signUpData.user?.id;
+  if (!newUserId) {
+    throw new Error('User creation failed. No User ID returned.');
+  }
+
+  const { error: profileErr } = await supabase.from('profiles').upsert({
+    id: newUserId,
+    name: name.trim(),
+    email: email.toLowerCase(),
+    role: role,
+    active: active,
+    region_id: 'REG-MALDA',
+    vendor_id: (role === 'Vendor' || role === 'Turnkey') ? 'VEND-512589' : 'VEND-NONE'
+  }, { onConflict: 'id' });
+
+  if (profileErr) {
+    throw new Error(profileErr.message || 'Account created in Auth, but profile failed to save.');
+  }
+
+  return { id: newUserId, name: name.trim(), email: email.toLowerCase(), role, active };
+}
+
+export async function adminSetUserPin(userId, pinInput) {
+  const password = normalizePin(pinInput);
+  const { error } = await supabase.rpc('admin_set_user_pin', {
+    target_user_id: userId,
+    new_pin: password
+  });
+  if (error) throw new Error(error.message || 'Could not update PIN/Password');
 }
 
 export async function signOut() {
