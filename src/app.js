@@ -85,6 +85,7 @@ let receipts = [];
 let invoices = [];
 let refreshTimer = 0;
 let sessionToken = 0;
+let deferredPrompt = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -111,6 +112,11 @@ function init() {
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) scheduleRefresh();
+  });
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    paint();
   });
   remote.watchAuth(onSession);
 }
@@ -248,6 +254,14 @@ function paint() {
     }
   }
   renderNav();
+  const pwaContainer = document.getElementById('pwa-install-container');
+  if (pwaContainer) {
+    pwaContainer.innerHTML = deferredPrompt ? `
+      <button type="button" class="nav-btn" data-action="install-pwa" style="margin-top: 8px; background: #0284c7; color: #ffffff; font-weight: 600; text-align: center; border: none; box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.3);">
+        📲 Install App
+      </button>
+    ` : '';
+  }
   document.querySelectorAll('.page').forEach((page) => {
     page.hidden = page.id !== `page-${currentPage}`;
   });
@@ -2196,6 +2210,16 @@ function onClick(event) {
     return;
   }
   if (action === 'modal-keep') return;
+  if (action === 'install-pwa') {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(({ outcome }) => {
+      if (outcome === 'accepted') toast('Malda UG App installed!');
+      deferredPrompt = null;
+      paint();
+    });
+    return;
+  }
   if (action === 'set-class') {
     setSupplyClass(Number(button.dataset.sl), button.dataset.class);
     return;

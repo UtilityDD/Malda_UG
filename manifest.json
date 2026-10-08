@@ -1,14 +1,27 @@
 {
+  "id": "malda-ug-pwa",
   "name": "Malda UG Cable Project Management Utility",
   "short_name": "Malda UG",
   "description": "WBSEDCL Malda Division Underground Cable Turnkey Project Management & Data Utility PWA",
-  "start_url": "/Malda_UG/",
-  "scope": "/Malda_UG/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0b1120",
   "theme_color": "#0f172a",
   "orientation": "any",
   "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "./icon.svg",
       "sizes": "192x192 512x512",
