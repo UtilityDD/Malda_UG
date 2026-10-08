@@ -219,6 +219,10 @@ function adopt(data) {
 }
 
 function paint() {
+  const shell = document.querySelector('.shell');
+  if (shell) {
+    shell.classList.toggle('logged-out', !sessionUser || !user.active);
+  }
   const box = document.getElementById('user-box');
   box.hidden = !user.active;
   if (user.active) {
@@ -284,36 +288,48 @@ function renderCurrent() {
 
 function renderAuth() {
   return `
-    <form class="auth-card" id="form-login">
-      <h1>Sign in to Malda UG Register</h1>
-      <p>Sign in using your User ID and PIN assigned by your Administrator.</p>
-      
-      <label>User ID / Email
-        <input name="email" id="auth-email" type="text" autocomplete="username" required placeholder="Enter your User ID or Email" />
-      </label>
-      
-      <label>PIN / Password
-        <input name="password" id="auth-password" type="password" autocomplete="current-password" required placeholder="Enter your PIN or password" />
-      </label>
-      
-      <p class="form-msg"></p>
-      
-      <button type="submit" class="primary">Sign in</button>
+    <div class="auth-wrapper">
+      <form class="auth-card" id="form-login">
+        <div class="auth-header">
+          <div class="auth-icon">⚡</div>
+          <h1>Malda UG Cable Register</h1>
+          <p>Sign in using your User ID and PIN assigned by your Administrator.</p>
+        </div>
+        
+        <div class="auth-fields">
+          <label>User ID / Email
+            <input name="email" id="auth-email" type="text" autocomplete="username" required placeholder="e.g. user01 or name@malda.com" />
+          </label>
+          
+          <label>PIN / Password
+            <input name="password" id="auth-password" type="password" autocomplete="current-password" required placeholder="Enter PIN or Password" />
+          </label>
+        </div>
+        
+        <p class="form-msg"></p>
+        
+        <button type="submit" class="primary auth-submit">Sign in to Register</button>
 
-      <div style="margin-top: 14px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); line-height: 1.4;">
-        <strong style="color: var(--text); display: block; margin-bottom: 2px;">Need a Login or PIN Reset?</strong>
-        User accounts are created exclusively by the Project Administrator. Please contact your Administrator or Divisional Engineer to receive your User ID and PIN.
-      </div>
-    </form>
+        <div class="auth-info-box">
+          <strong>Need a Login or PIN Reset?</strong>
+          User accounts are created exclusively by the Project Administrator. Please contact your Administrator or Divisional Engineer to receive your credentials.
+        </div>
+      </form>
+    </div>
   `;
 }
 
 function renderWaiting() {
   return `
-    <div class="auth-card">
-      <h1>Waiting for Admin</h1>
-      <p>${esc(user.name || user.email || 'This login')} is signed in, and Admin has not turned it on yet.</p>
-      <button type="button" class="ghost" data-action="sign-out">Sign out</button>
+    <div class="auth-wrapper">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="auth-icon" style="background: linear-gradient(135deg, #d97706, #78350f);">⌛</div>
+          <h1>Waiting for Activation</h1>
+          <p>Your account <strong>${esc(user.name || user.email || '')}</strong> is registered, but not activated by the Administrator yet.</p>
+        </div>
+        <button type="button" class="ghost auth-submit" data-action="sign-out" style="background: #f1f5f9; color: #334155;">Sign out</button>
+      </div>
     </div>
   `;
 }
