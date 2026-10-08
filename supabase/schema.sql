@@ -990,7 +990,18 @@ begin
     created_at,
     updated_at,
     aud,
-    role
+    role,
+    confirmation_token,
+    recovery_token,
+    email_change,
+    email_change_token_new,
+    email_change_token_current,
+    phone_change,
+    phone_change_token,
+    reauthentication_token,
+    email_change_confirm_status,
+    is_sso_user,
+    is_anonymous
   ) values (
     v_user_id,
     '00000000-0000-0000-0000-000000000000'::uuid,
@@ -1002,7 +1013,18 @@ begin
     now(),
     now(),
     'authenticated',
-    'authenticated'
+    'authenticated',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    0,
+    false,
+    false
   );
 
   insert into auth.identities (
@@ -1015,9 +1037,9 @@ begin
     created_at,
     updated_at
   ) values (
-    gen_random_uuid(),
     v_user_id,
-    jsonb_build_object('sub', v_user_id::text, 'email', v_email),
+    v_user_id,
+    jsonb_build_object('sub', v_user_id::text, 'email', v_email, 'email_verified', true, 'phone_verified', false),
     'email',
     v_user_id::text,
     now(),
@@ -1052,5 +1074,27 @@ end;
 $$;
 
 grant execute on function public.admin_create_user(text, text, text, text) to authenticated;
+
+-- Immediate repair script for existing users (like user DD) created via direct SQL
+update auth.users
+set
+  confirmation_token = coalesce(confirmation_token, ''),
+  recovery_token = coalesce(recovery_token, ''),
+  email_change = coalesce(email_change, ''),
+  email_change_token_new = coalesce(email_change_token_new, ''),
+  email_change_token_current = coalesce(email_change_token_current, ''),
+  phone_change = coalesce(phone_change, ''),
+  phone_change_token = coalesce(phone_change_token, ''),
+  reauthentication_token = coalesce(reauthentication_token, ''),
+  email_change_confirm_status = coalesce(email_change_confirm_status, 0),
+  is_sso_user = coalesce(is_sso_user, false),
+  is_anonymous = coalesce(is_anonymous, false)
+where confirmation_token is null
+   or recovery_token is null
+   or email_change is null
+   or email_change_token_new is null
+   or is_sso_user is null
+   or is_anonymous is null;
+
 
 
