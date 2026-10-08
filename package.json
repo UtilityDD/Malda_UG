@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000 --host",
-    "build": "vite build && node -e \"import fs from 'fs'; fs.copyFileSync('sw.js', 'dist/sw.js'); fs.copyFileSync('manifest.json', 'dist/manifest.json');\"",
+    "build": "vite build && node -e \"import fs from 'fs'; fs.copyFileSync('sw.js', 'dist/sw.js'); fs.copyFileSync('manifest.json', 'dist/manifest.json'); fs.copyFileSync('icon.svg', 'dist/icon.svg');\"",
     "preview": "vite preview"
   },
   "dependencies": {
