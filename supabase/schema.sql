@@ -47,7 +47,7 @@ create table if not exists public.items (
 
 create table if not exists public.approvals (
   item_sl integer not null references public.items (sl_no) on delete restrict,
-  kind text not null check (kind in ('vendor', 'gtp')),
+  kind text not null check (kind in ('vendor', 'gtp', 'gtp_vendor')),
   status text not null check (status in ('Submitted', 'Approved', 'Hold', 'Rejected')),
   vendor text not null default '',
   letter_no text not null default '',
@@ -63,6 +63,8 @@ create table if not exists public.approvals (
 
 ALTER TABLE public.approvals DROP CONSTRAINT IF EXISTS approvals_pkey;
 ALTER TABLE public.approvals ADD PRIMARY KEY (item_sl, kind, letter_no);
+ALTER TABLE public.approvals DROP CONSTRAINT IF EXISTS approvals_kind_check;
+ALTER TABLE public.approvals ADD CONSTRAINT approvals_kind_check CHECK (kind in ('vendor', 'gtp', 'gtp_vendor'));
 
 create table if not exists public.offers (
   id text primary key,
@@ -148,6 +150,46 @@ create index if not exists receipts_item_idx on public.receipts (item_sl);
 create index if not exists invoice_lines_item_idx on public.invoice_lines (item_sl);
 create index if not exists invoice_lines_invoice_idx on public.invoice_lines (invoice_id);
 create index if not exists logs_item_idx on public.logs (item_sl);
+
+create table if not exists public.site_activities (
+  id text primary key,
+  activity_date date not null,
+  activity_type text not null,
+  agency_rep text not null,
+  wbsedcl_rep text not null default '',
+  other_rep text not null default '',
+  qty text not null default '',
+  description text not null default '',
+  created_by text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists site_activities_date_idx on public.site_activities (activity_date);
+
+create table if not exists public.project_contract (
+  id text primary key default 'MALDA-UG-MAIN',
+  loa_no text not null default 'WBSEDCL/RE/Malda/UG/2023-24/01',
+  loa_date date default '2024-01-16',
+  acceptance_date date,
+  acceptance_ref text not null default '',
+  schedule_sub_date date,
+  schedule_sub_ref text not null default '',
+  schedule_sub_remarks text not null default '',
+  schedule_appr_date date,
+  schedule_appr_ref text not null default '',
+  schedule_appr_status text not null default 'Pending',
+  schedule_appr_remarks text not null default '',
+  target_completion_date date default '2025-07-15',
+  bg_entries jsonb not null default '[]'::jsonb,
+  eot_entries jsonb not null default '[]'::jsonb,
+  remarks text not null default '',
+  updated_by text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+insert into public.project_contract (id, loa_no, loa_date, target_completion_date)
+values ('MALDA-UG-MAIN', 'WBSEDCL/RE/Malda/UG/2023-24/01', '2024-01-16', '2025-07-15')
+on conflict (id) do nothing;
 
 create or replace function public.my_role()
 returns text
@@ -282,7 +324,7 @@ begin
     if new.letter_no = '' or new.sub_date is null then
       raise exception 'Enter the letter number and submit date';
     end if;
-    if new.kind = 'vendor' and new.vendor = '' then
+    if new.kind in ('vendor', 'gtp_vendor') and new.vendor = '' then
       raise exception 'Enter the vendor name';
     end if;
     new.approved_qty := null;
@@ -297,11 +339,11 @@ begin
   if role not in ('Region', 'WBSEDCL', 'Admin') then
     raise exception 'This login cannot decide this letter';
   end if;
-  if tg_op = 'INSERT' or old.status not in ('Submitted', 'Hold', 'Rejected') then
+  if tg_op = 'UPDATE' and old.status not in ('Submitted', 'Hold', 'Rejected') then
     raise exception 'Select a submitted item';
   end if;
-  if new.status not in ('Approved', 'Hold', 'Rejected') then
-    raise exception 'Choose approve, hold, or reject';
+  if new.status not in ('Approved', 'Rejected', 'Hold') then
+    raise exception 'Choose approve or reject';
   end if;
   if new.memo_no = '' or new.action_date is null or new.remarks = '' then
     raise exception 'Enter the memo number, date, and remarks';
@@ -330,6 +372,7 @@ as $$
 declare
   role text := public.my_role();
   item record;
+  combo_qty numeric;
   vendor_qty numeric;
   gtp_qty numeric;
   approved numeric;
@@ -350,14 +393,19 @@ begin
     if new.status is distinct from 'Offered' then
       raise exception 'A new offer starts as offered';
     end if;
+    select max(coalesce(approved_qty, item.loa_qty)) into combo_qty from public.approvals
+      where item_sl = new.item_sl and kind = 'gtp_vendor' and status = 'Approved';
     select max(coalesce(approved_qty, item.loa_qty)) into vendor_qty from public.approvals
       where item_sl = new.item_sl and kind = 'vendor' and status = 'Approved';
     select max(coalesce(approved_qty, item.loa_qty)) into gtp_qty from public.approvals
       where item_sl = new.item_sl and kind = 'gtp' and status = 'Approved';
-    if vendor_qty is null and gtp_qty is null then
+    if combo_qty is not null then
+      approved := combo_qty;
+    elsif vendor_qty is not null or gtp_qty is not null then
+      approved := coalesce(least(vendor_qty, gtp_qty), vendor_qty, gtp_qty);
+    else
       raise exception 'Approve the vendor or the GTP before offering inspection';
     end if;
-    approved := coalesce(least(vendor_qty, gtp_qty), vendor_qty, gtp_qty);
     select coalesce(sum(qty), 0) into used from public.offers
       where item_sl = new.item_sl and status <> 'Rejected';
     if used + new.qty > approved then
@@ -743,7 +791,7 @@ create policy items_delete on public.items for delete to authenticated using (pu
 drop policy if exists approvals_select on public.approvals;
 create policy approvals_select on public.approvals for select to authenticated using (public.my_role() is not null);
 drop policy if exists approvals_insert on public.approvals;
-create policy approvals_insert on public.approvals for insert to authenticated with check (public.my_role() in ('Vendor', 'Turnkey', 'Admin'));
+create policy approvals_insert on public.approvals for insert to authenticated with check (public.my_role() in ('Vendor', 'Turnkey', 'Region', 'WBSEDCL', 'Admin'));
 drop policy if exists approvals_update on public.approvals;
 create policy approvals_update on public.approvals for update to authenticated
   using (public.my_role() in ('Vendor', 'Turnkey', 'Region', 'WBSEDCL', 'Admin'))
@@ -801,6 +849,29 @@ create policy logs_update on public.logs for update to authenticated
 drop policy if exists logs_delete on public.logs;
 create policy logs_delete on public.logs for delete to authenticated using (public.my_role() = 'Admin');
 
+drop policy if exists site_activities_select on public.site_activities;
+create policy site_activities_select on public.site_activities for select to authenticated using (public.my_role() is not null);
+drop policy if exists site_activities_insert on public.site_activities;
+create policy site_activities_insert on public.site_activities for insert to authenticated with check (public.my_role() in ('Vendor', 'Turnkey', 'Region', 'WBSEDCL', 'Admin'));
+drop policy if exists site_activities_update on public.site_activities;
+create policy site_activities_update on public.site_activities for update to authenticated
+  using (public.my_role() in ('Vendor', 'Turnkey', 'Region', 'WBSEDCL', 'Admin'))
+  with check (public.my_role() in ('Vendor', 'Turnkey', 'Region', 'WBSEDCL', 'Admin'));
+drop policy if exists site_activities_delete on public.site_activities;
+create policy site_activities_delete on public.site_activities for delete to authenticated using (public.my_role() = 'Admin');
+
+alter table public.project_contract enable row level security;
+drop policy if exists project_contract_select on public.project_contract;
+create policy project_contract_select on public.project_contract for select to authenticated using (public.my_role() is not null);
+drop policy if exists project_contract_insert on public.project_contract;
+create policy project_contract_insert on public.project_contract for insert to authenticated with check (public.my_role() in ('Region', 'Admin'));
+drop policy if exists project_contract_update on public.project_contract;
+create policy project_contract_update on public.project_contract for update to authenticated
+  using (public.my_role() in ('Region', 'Admin'))
+  with check (public.my_role() in ('Region', 'Admin'));
+drop policy if exists project_contract_delete on public.project_contract;
+create policy project_contract_delete on public.project_contract for delete to authenticated using (public.my_role() = 'Admin');
+
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.items to authenticated;
 grant select, insert, update, delete on public.approvals to authenticated;
@@ -810,6 +881,8 @@ grant select, insert, delete on public.receipts to authenticated;
 grant select, update, delete on public.invoices to authenticated;
 grant select, delete on public.invoice_lines to authenticated;
 grant select, insert, update, delete on public.logs to authenticated;
+grant select, insert, update, delete on public.site_activities to authenticated;
+grant select, insert, update, delete on public.project_contract to authenticated;
 
 revoke all on public.profiles from anon;
 revoke all on public.items from anon;
@@ -820,6 +893,8 @@ revoke all on public.receipts from anon;
 revoke all on public.invoices from anon;
 revoke all on public.invoice_lines from anon;
 revoke all on public.logs from anon;
+revoke all on public.site_activities from anon;
+revoke all on public.project_contract from anon;
 
 create table if not exists public.versions (
   name text primary key,
@@ -835,6 +910,8 @@ insert into public.versions (name) values
   ('invoices'),
   ('invoice_lines'),
   ('logs'),
+  ('site_activities'),
+  ('project_contract'),
   ('profiles')
 on conflict (name) do nothing;
 
@@ -860,7 +937,7 @@ do $$
 declare
   name text;
 begin
-  foreach name in array array['items', 'approvals', 'offers', 'di', 'receipts', 'invoices', 'invoice_lines', 'logs', 'profiles']
+  foreach name in array array['items', 'approvals', 'offers', 'di', 'receipts', 'invoices', 'invoice_lines', 'logs', 'site_activities', 'project_contract', 'profiles']
   loop
     execute format('drop trigger if exists bump_version on public.%I', name);
     execute format(
@@ -902,7 +979,7 @@ do $$
 declare
   name text;
 begin
-  foreach name in array array['items', 'approvals', 'offers', 'di', 'receipts', 'invoices', 'invoice_lines', 'logs', 'profiles']
+  foreach name in array array['items', 'approvals', 'offers', 'di', 'receipts', 'invoices', 'invoice_lines', 'logs', 'site_activities', 'project_contract', 'profiles']
   loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', name);

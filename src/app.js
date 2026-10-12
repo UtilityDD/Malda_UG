@@ -60,8 +60,10 @@ const FEEDERS = [
 
 let currentPage = 'home';
 let searchQuery = '';
+let boqTab = 'overview';
 let boqPart = 'Part-A (Material)';
-let gtpTab = 'vendor';
+let contractData = null;
+let gtpTab = 'all';
 let billTab = 'supply';
 let dailyTab = 'supply';
 let receiveTab = 'materials';
@@ -83,6 +85,7 @@ let dispatchInstructions = [];
 let inspectionOffers = [];
 let receipts = [];
 let invoices = [];
+let siteActivities = [];
 let refreshTimer = 0;
 let sessionToken = 0;
 let deferredPrompt = null;
@@ -194,23 +197,29 @@ function adopt(data) {
   inspectionOffers = data.offers;
   receipts = data.receipts;
   invoices = data.invoices || [];
+  siteActivities = data.activities || [];
+  contractData = data.contract || defaultContract();
   people = data.people || [];
   boqItems.forEach((item) => {
     ensurePipeline(item);
     data.approvals
       .filter((row) => row.itemSl === item.slNo)
       .forEach((row) => {
-        const target = row.kind === 'gtp' ? item.pipeline.gtpDoc : item.pipeline.vendorAppr;
-        target.status = row.status;
-        target.vendor = row.vendor;
-        target.letterNo = row.letterNo;
-        target.subDate = row.subDate;
-        target.apprDate = row.apprDate;
-        target.approvedQty = row.approvedQty;
-        target.actionDate = row.actionDate;
-        target.memoNo = row.memoNo;
-        target.remarks = row.remarks;
-        target.actionBy = row.actionBy;
+        const targets = row.kind === 'gtp_vendor'
+          ? [item.pipeline.gtpDoc, item.pipeline.vendorAppr]
+          : [row.kind === 'gtp' ? item.pipeline.gtpDoc : item.pipeline.vendorAppr];
+        targets.forEach((target) => {
+          target.status = row.status;
+          target.vendor = row.vendor;
+          target.letterNo = row.letterNo;
+          target.subDate = row.subDate;
+          target.apprDate = row.apprDate;
+          target.approvedQty = row.approvedQty;
+          target.actionDate = row.actionDate;
+          target.memoNo = row.memoNo;
+          target.remarks = row.remarks;
+          target.actionBy = row.actionBy;
+        });
       });
     const logged = sum(dailyLogs.filter((row) => Number(row.itemSl) === item.slNo && row.approvalStatus === 'Approved'), (row) => Number(row.executedQty) || 0);
     item.pipeline.execution.executedQty = logged;
@@ -423,6 +432,38 @@ function renderUsers() {
   `;
 }
 
+function defaultContract() {
+  return {
+    id: 'MALDA-UG-MAIN',
+    loaNo: PROJECT_INFO.poNumber || 'WBSEDCL/RE/Malda/UG/2023-24/01',
+    loaDate: PROJECT_INFO.poDate || '2024-01-16',
+    acceptanceDate: '',
+    acceptanceRef: '',
+    scheduleSubDate: '',
+    scheduleSubRef: '',
+    scheduleSubRemarks: '',
+    scheduleApprDate: '',
+    scheduleApprRef: '',
+    scheduleApprStatus: 'Pending',
+    scheduleApprRemarks: '',
+    targetCompletionDate: PROJECT_INFO.targetCompletionDate || '2025-07-15',
+    bgEntries: [],
+    eotEntries: [],
+    remarks: '',
+    updatedBy: '',
+    updatedAt: ''
+  };
+}
+
+function effectiveTargetCompletionDate() {
+  const c = contractData || defaultContract();
+  const approvedEots = (c.eotEntries || [])
+    .filter((e) => e.status === 'Approved' && e.revisedDate)
+    .sort((a, b) => String(b.revisedDate).localeCompare(String(a.revisedDate)));
+  if (approvedEots.length > 0) return approvedEots[0].revisedDate;
+  return c.targetCompletionDate || PROJECT_INFO.targetCompletionDate || '2025-07-15';
+}
+
 function renderHome() {
   const material = boqItems.filter(isMaterial);
   const erection = boqItems.filter((item) => !isMaterial(item));
@@ -434,23 +475,49 @@ function renderHome() {
   const receivedPct = materialScope ? (materialReceived / materialScope) * 100 : 0;
   const paid = sum(invoices.filter((invoice) => invoice.payStatus === 'Paid'), invoiceGross);
   const claimed = sum(invoices.filter((invoice) => invoice.payStatus !== 'Paid'), invoiceGross);
-  const days = daysUntil(PROJECT_INFO.targetCompletionDate);
+
+  const contract = contractData || defaultContract();
+  const effTarget = effectiveTargetCompletionDate();
+  const days = daysUntil(effTarget);
+  const activeBgs = (contract.bgEntries || []).filter((b) => b.status !== 'Released');
+  const totalBgAmount = sum(activeBgs, (b) => Number(b.amount) || 0);
+  const approvedEots = (contract.eotEntries || []).filter((e) => e.status === 'Approved');
+
   const buttons = PAGES.filter((page) => page.id !== 'home' && canOpen(page.id));
 
   return `
     <div class="page-head">
       <div>
         <h1>Malda UG Cable</h1>
-        <p>${esc(user.name || user.role)} · ${esc(user.role)} · ${esc(PROJECT_INFO.turnkeyAgency)}</p>
+        <p>${esc(user.name || effectiveRole())} · ${esc(effectiveRole())} · ${esc(PROJECT_INFO.turnkeyAgency)}</p>
       </div>
     </div>
     <div class="kpis">
       ${kpi('Scope', formatCr(PROJECT_INFO.totalPoValue), `${material.length} material · ${erection.length} erection`)}
       ${kpi('Progress', `${progress.toFixed(1)}%`, `${formatMoney(executedValue)} executed`)}
       ${kpi('Material', `${receivedPct.toFixed(1)}%`, `${formatMoney(materialReceived)} received`)}
-      ${kpi('Target', formatDisplayDate(PROJECT_INFO.targetCompletionDate), days >= 0 ? `${days} days left` : `${Math.abs(days)} days past target`)}
+      ${kpi('Target', formatDisplayDate(effTarget), days >= 0 ? `${days} days left` : `${Math.abs(days)} days past target`, 'open-contract-overview')}
       ${kpi('Billing', formatMoney(paid), `${formatMoney(claimed)} claimed, not paid`)}
     </div>
+
+    <div class="contract-banner-card" data-action="open-contract-overview" title="Open Contract Milestones & Overview">
+      <div class="contract-banner-main">
+        <span class="contract-badge">Contract Milestones & Overview</span>
+        <h3>LOA: ${esc(contract.loaNo || PROJECT_INFO.poNumber)} · Target: ${esc(formatDisplayDate(effTarget))}</h3>
+        <p class="contract-banner-sub">
+          LOA Date: <strong>${esc(formatDisplayDate(contract.loaDate || PROJECT_INFO.poDate))}</strong> ·
+          L1/L2 Schedule: <strong>${esc(contract.scheduleApprStatus || 'Pending')}</strong> ·
+          Bank Guarantees: <strong>${activeBgs.length} Active</strong> (${formatMoney(totalBgAmount)}) ·
+          EOT: <strong>${approvedEots.length} Approved</strong>
+        </p>
+      </div>
+      <div>
+        <button type="button" class="contract-banner-btn" data-action="open-contract-overview">
+          Contract Overview &rarr;
+        </button>
+      </div>
+    </div>
+
     <div class="open-grid">
       ${buttons.map((page) => `
         <button type="button" class="open-btn" data-action="open" data-page="${page.id}">
@@ -463,16 +530,26 @@ function renderHome() {
 }
 
 function renderBoq() {
-  const material = boqPart !== 'Part-B (Erection)';
+  const tabs = [
+    ['overview', 'Overview & Milestones'],
+    ['material', 'Material (Part-A)'],
+    ['erection', 'Erection (Part-B)']
+  ];
+
+  if (boqTab === 'overview') {
+    return renderBoqOverview(tabs);
+  }
+
+  const material = boqTab === 'material' || (boqTab !== 'erection' && boqPart !== 'Part-B (Erection)');
   const rows = boqItems.filter((item) => material ? isMaterial(item) : !isMaterial(item));
-  const hint = user.role === 'Admin'
+  const hint = isAdmin()
     ? 'Edit updates the line. Survey quantity is entered here.'
     : 'Click an item to enter survey quantity.';
   return `
     ${head('BOQ', hint)}
     <div class="tab-row">
-      ${tabBar('boq', [['material', 'Material'], ['erection', 'Erection']], material ? 'material' : 'erection')}
-      ${user.role === 'Admin' ? '<button type="button" class="ghost" data-action="open-entry" data-mode="new">New item</button>' : ''}
+      ${tabBar('boq', tabs, boqTab)}
+      ${isAdmin() ? '<button type="button" class="ghost" data-action="open-entry" data-mode="new">New item</button>' : ''}
     </div>
     ${table(['Sl', 'Description', 'Unit', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Rate'), numHead('Executed'), ''], rows.map((item) => `
       <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
@@ -483,9 +560,154 @@ function renderBoq() {
         <td class="num">${surveyText(item)}</td>
         <td class="num">${fmtQty(item.rate)}</td>
         <td class="num">${qtyText(executedQty(item), item.unit)}</td>
-        <td class="row-actions">${user.role === 'Admin' ? `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Edit</button><button type="button" class="tiny danger" data-action="delete-boq" data-sl="${item.slNo}">Delete</button>` : ''}</td>
+        <td class="row-actions">${isAdmin() ? `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Edit</button><button type="button" class="tiny danger" data-action="delete-boq" data-sl="${item.slNo}">Delete</button>` : ''}</td>
       </tr>
     `), 8)}
+  `;
+}
+
+function renderBoqOverview(tabs) {
+  const contract = contractData || defaultContract();
+  const effTarget = effectiveTargetCompletionDate();
+  const days = daysUntil(effTarget);
+  const canEdit = isRegion() || isAdmin();
+
+  const bgs = contract.bgEntries || [];
+  const activeBgs = bgs.filter((b) => b.status !== 'Released');
+  const totalBgSubmitted = sum(bgs, (b) => Number(b.amount) || 0);
+  const totalBgActive = sum(activeBgs, (b) => Number(b.amount) || 0);
+
+  const eots = contract.eotEntries || [];
+  const approvedEots = eots.filter((e) => e.status === 'Approved');
+
+  const l1StatusBadge = contract.scheduleApprStatus === 'Approved'
+    ? '<span class="badge ok">Approved</span>'
+    : contract.scheduleApprStatus === 'Revision Requested'
+    ? '<span class="badge bad">Revision Req.</span>'
+    : contract.scheduleApprStatus === 'Conditional'
+    ? '<span class="badge wait">Conditional</span>'
+    : '<span class="badge wait">Pending</span>';
+
+  return `
+    ${head('BOQ & Contract Overview', 'Contract milestones, LOA acceptance, Bank Guarantees (BG), L1/L2 schedules, and completion targets.')}
+    <div class="tab-row">
+      ${tabBar('boq', tabs, 'overview')}
+      ${canEdit ? '<button type="button" class="ghost" data-action="contract-edit-milestones">Edit Milestones</button>' : ''}
+    </div>
+
+    <div class="kpis" style="margin-top: 14px;">
+      ${kpi('Contract Value', formatCr(PROJECT_INFO.totalPoValue), `Excl GST · With GST: ${formatCr(PROJECT_INFO.totalValueWithGst)}`)}
+      ${kpi('LOA Date', formatDisplayDate(contract.loaDate || PROJECT_INFO.poDate), contract.acceptanceDate ? `Accepted: ${formatDisplayDate(contract.acceptanceDate)}` : 'Acceptance pending')}
+      ${kpi('Effective Target', formatDisplayDate(effTarget), days >= 0 ? `${days} days left` : `${Math.abs(days)} days delayed`)}
+      ${kpi('Bank Guarantees', formatMoney(totalBgActive), `${activeBgs.length} active (${formatMoney(totalBgSubmitted)} total)`)}
+    </div>
+
+    <div class="contract-overview-wrap">
+      <!-- Card 1: LOA Acceptance & L1/L2 Schedule Milestones -->
+      <div class="contract-card">
+        <div class="contract-card-header">
+          <div>
+            <h3>LOA Baseline & Implementation Schedule</h3>
+            <p>Letter of Award details and L1/L2 execution schedule approval tracking</p>
+          </div>
+          ${canEdit ? '<button type="button" class="tiny" data-action="contract-edit-milestones">Edit</button>' : ''}
+        </div>
+        <div class="contract-grid-2">
+          <div class="contract-item-box">
+            <div class="contract-item-label">Letter of Award (LOA / PO)</div>
+            <div class="contract-item-val">${esc(contract.loaNo || PROJECT_INFO.poNumber)}</div>
+            <div class="contract-item-sub">LOA Date: <strong>${esc(formatDisplayDate(contract.loaDate || PROJECT_INFO.poDate))}</strong></div>
+            <div class="contract-item-sub" style="margin-top:8px;">
+              Date of Acceptance: <strong>${contract.acceptanceDate ? esc(formatDisplayDate(contract.acceptanceDate)) : '<span class="badge wait">Pending</span>'}</strong>
+            </div>
+            ${contract.acceptanceRef ? `<div class="contract-item-sub">Acceptance Ref: <strong>${esc(contract.acceptanceRef)}</strong></div>` : ''}
+          </div>
+
+          <div class="contract-item-box">
+            <div class="contract-item-label">L1 / L2 Schedule Milestones</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 6px;">
+              <span class="contract-item-val" style="font-size:14px;">Approval Status</span>
+              ${l1StatusBadge}
+            </div>
+            <div class="contract-item-sub">
+              Submission Date: <strong>${contract.scheduleSubDate ? esc(formatDisplayDate(contract.scheduleSubDate)) : '—'}</strong>
+              ${contract.scheduleSubRef ? ` (Ref: ${esc(contract.scheduleSubRef)})` : ''}
+            </div>
+            <div class="contract-item-sub">
+              Approval Date: <strong>${contract.scheduleApprDate ? esc(formatDisplayDate(contract.scheduleApprDate)) : '—'}</strong>
+              ${contract.scheduleApprRef ? ` (Memo: ${esc(contract.scheduleApprRef)})` : ''}
+            </div>
+            ${contract.scheduleApprRemarks ? `<div class="contract-item-sub" style="margin-top:6px; color:#475569; font-style:italic;">Remarks: ${esc(contract.scheduleApprRemarks)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Bank Guarantees (Multi-entry) -->
+      <div class="contract-card">
+        <div class="contract-card-header">
+          <div>
+            <h3>Bank Guarantees (BG Details)</h3>
+            <p>Security deposit and performance bank guarantees submitted by Turnkey Agency</p>
+          </div>
+          ${canEdit ? '<button type="button" class="primary tiny" data-action="contract-add-bg">+ Add BG</button>' : ''}
+        </div>
+        ${table(['BG No.', 'Issuing Bank & Branch', numHead('BG Amount (₹)'), 'Submission Date', 'Expiry Date', 'Claim Expiry', 'Status', 'Remarks', ''], bgs.map((bg, idx) => {
+          const bgStatusBadge = bg.status === 'Released'
+            ? '<span class="badge idle">Released</span>'
+            : bg.status === 'Expired'
+            ? '<span class="badge bad">Expired</span>'
+            : '<span class="badge ok">Active</span>';
+          return `
+            <tr>
+              <td><strong>${esc(bg.bgNo || '—')}</strong></td>
+              <td>${esc(bg.bankName || '—')}</td>
+              <td class="num">${formatMoney(bg.amount)}</td>
+              <td>${esc(formatDisplayDate(bg.subDate))}</td>
+              <td>${esc(formatDisplayDate(bg.expiryDate))}</td>
+              <td>${esc(formatDisplayDate(bg.claimDate))}</td>
+              <td>${bgStatusBadge}</td>
+              <td class="desc" title="${esc(bg.remarks || '')}">${esc(bg.remarks || '—')}</td>
+              <td class="row-actions">
+                ${canEdit ? `<button type="button" class="tiny" data-action="contract-edit-bg" data-idx="${idx}">Edit</button><button type="button" class="tiny danger" data-action="contract-delete-bg" data-idx="${idx}">Delete</button>` : ''}
+              </td>
+            </tr>
+          `;
+        }), 9, 'No Bank Guarantees recorded yet. Region User or Admin can click "+ Add BG" to register one.')}
+      </div>
+
+      <!-- Card 3: Target Completion Date & Extensions of Time (EOT) -->
+      <div class="contract-card">
+        <div class="contract-card-header">
+          <div>
+            <h3>Target Completion Date & Revisions (EOT)</h3>
+            <p>Original LOA target date: <strong>${esc(formatDisplayDate(contract.targetCompletionDate || PROJECT_INFO.targetCompletionDate))}</strong> · Effective target: <strong>${esc(formatDisplayDate(effTarget))}</strong> (${approvedEots.length} Approved EOTs)</p>
+          </div>
+          ${canEdit ? '<button type="button" class="primary tiny" data-action="contract-add-eot">+ Add Revision / EOT</button>' : ''}
+        </div>
+        ${table(['Rev #', 'Revised Target Date', 'Extension', 'Approval Memo', 'Approval Date', 'Approved By', 'Status', 'Reason / Grounds', ''], eots.map((eot, idx) => {
+          const eotStatusBadge = eot.status === 'Approved'
+            ? '<span class="badge ok">Approved</span>'
+            : eot.status === 'Rejected'
+            ? '<span class="badge bad">Rejected</span>'
+            : '<span class="badge wait">Pending / Review</span>';
+          return `
+            <tr>
+              <td><strong>Rev-${idx + 1}</strong></td>
+              <td><strong>${esc(formatDisplayDate(eot.revisedDate))}</strong></td>
+              <td>${esc(eot.extensionDays ? `${eot.extensionDays} days` : '—')}</td>
+              <td>${esc(eot.memoNo || '—')}</td>
+              <td>${esc(formatDisplayDate(eot.approvalDate))}</td>
+              <td>${esc(eot.approvedBy || 'WBSEDCL')}</td>
+              <td>${eotStatusBadge}</td>
+              <td class="desc" title="${esc(eot.reason || '')}">${esc(eot.reason || '—')}</td>
+              <td class="row-actions">
+                ${canEdit ? `<button type="button" class="tiny" data-action="contract-edit-eot" data-idx="${idx}">Edit</button><button type="button" class="tiny danger" data-action="contract-delete-eot" data-idx="${idx}">Delete</button>` : ''}
+              </td>
+            </tr>
+          `;
+        }), 9, 'No Time Extension (EOT) revisions recorded. Original target date applies.')}
+      </div>
+    </div>
   `;
 }
 
@@ -494,30 +716,73 @@ const GTP_WAITING = ['Submitted', 'Hold', 'Rejected'];
 function renderGtp() {
   const rows = boqItems.filter(isMaterial);
   const canSubmit = isVendor() || isAdmin();
-  const kind = gtpTab === 'gtp' ? 'gtp' : 'vendor';
   const groups = letterGroups();
-  const hint = isRegion()
-    ? 'Open "By letter" to decide every item of a letter in one go, or click a single row.'
-    : 'New submission sends one letter for many materials: fill the reference once and tick the items it covers.';
-  const body = gtpTab === 'letters' ? lettersTable(groups) : approvalTable(rows, kind);
   const stats = gtpStats(rows);
-  const addBtn = user.role === 'Admin'
+  const hint = isRegion()
+    ? 'Review submissions, approve with memo reference, or open "By letter" to decide whole letters in bulk.'
+    : 'Submit letters covering multiple materials. Choose GTP+Vendor, GTP only, or Vendor only.';
+  const addBtn = isAdmin()
     ? `<button type="button" class="ghost" data-action="open-entry" data-mode="new">+ Add new material item</button>`
     : '';
+
+  let body = '';
+  if (gtpTab === 'letters') {
+    body = lettersTable(groups);
+  } else {
+    let filteredRows = rows;
+    let emptyMsg = 'No materials in this category.';
+    if (gtpTab === 'not_submitted') {
+      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'not_submitted');
+      emptyMsg = 'No materials awaiting submission. All materials have been submitted or approved!';
+    } else if (gtpTab === 'pending') {
+      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'pending');
+      emptyMsg = 'No submissions currently pending approval. All caught up!';
+    } else if (gtpTab === 'approved') {
+      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'approved');
+      emptyMsg = 'No materials approved yet.';
+    } else if (gtpTab === 'rejected') {
+      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'rejected');
+      emptyMsg = 'No materials rejected or on hold.';
+    }
+    body = unifiedApprovalTable(filteredRows, emptyMsg);
+  }
 
   return `
     ${head('GTP / Vendor', hint)}
     <div class="gtp-stats">
-      ${gtpStat('Not submitted', stats.open, 'idle', 'documents still to send')}
-      ${gtpStat('Awaiting decision', stats.waiting, 'wait', 'with WBSEDCL')}
-      ${gtpStat('Hold / rejected', stats.blocked, 'bad', 'need attention')}
-      ${gtpStat('Ready for offer', stats.done, 'ok', `of ${rows.length} materials`)}
+      <div class="gtp-stat idle pick" data-action="gtp-tab" data-tab="not_submitted" style="cursor:pointer;" title="Show Not-Submitted">
+        <strong>${stats.notSubmitted}</strong>
+        <span>Not-Submitted</span>
+        <em>pending initial submission</em>
+      </div>
+      <div class="gtp-stat wait pick" data-action="gtp-tab" data-tab="pending" style="cursor:pointer;" title="Show Pending Approval">
+        <strong>${stats.pending}</strong>
+        <span>Pending Approval</span>
+        <em>awaiting WBSEDCL decision</em>
+      </div>
+      <div class="gtp-stat ok pick" data-action="gtp-tab" data-tab="approved" style="cursor:pointer;" title="Show Approved">
+        <strong>${stats.approved}</strong>
+        <span>Approved</span>
+        <em>ready for inspection offer</em>
+      </div>
+      <div class="gtp-stat bad pick" data-action="gtp-tab" data-tab="rejected" style="cursor:pointer;" title="Show Rejected / Hold">
+        <strong>${stats.rejected}</strong>
+        <span>Rejected / Hold</span>
+        <em>needs attention</em>
+      </div>
     </div>
     <div class="tab-row">
-      ${tabBar('gtp', [['vendor', 'Vendor approval'], ['gtp', 'GTP'], ['letters', `By letter (${groups.length})`]], gtpTab)}
+      ${tabBar('gtp', [
+        ['all', `All materials (${rows.length})`],
+        ['not_submitted', `Not-Submitted (${stats.notSubmitted})`],
+        ['pending', `Pending Approval (${stats.pending})`],
+        ['approved', `Approved (${stats.approved})`],
+        ['rejected', `Rejected (${stats.rejected})`],
+        ['letters', `By letter (${groups.length})`]
+      ], gtpTab)}
       <div class="actions" style="display:flex; gap:8px; align-items:center;">
         ${addBtn}
-        ${canSubmit ? `<button type="button" class="primary" id="gtp-new-submission" data-action="batch-new" data-kind="${kind}">+ New submission</button>` : ''}
+        ${canSubmit ? `<button type="button" class="primary" id="gtp-new-submission" data-action="batch-new" data-kind="gtp_vendor">+ New submission</button>` : ''}
       </div>
     </div>
     ${body}
@@ -525,15 +790,13 @@ function renderGtp() {
 }
 
 function gtpStats(rows) {
-  const stats = { open: 0, waiting: 0, blocked: 0, done: 0 };
+  const stats = { notSubmitted: 0, pending: 0, approved: 0, rejected: 0, total: rows.length };
   rows.forEach((item) => {
-    ['vendor', 'gtp'].forEach((kind) => {
-      const status = approvalRecord(item, kind).status;
-      if (status === 'Submitted') stats.waiting += 1;
-      else if (status === 'Hold' || status === 'Rejected') stats.blocked += 1;
-      else if (status !== 'Approved') stats.open += 1;
-    });
-    if (approvedBoqQty(item) > 0) stats.done += 1;
+    const st = itemApprovalStatus(item);
+    if (st === 'pending') stats.pending += 1;
+    else if (st === 'approved') stats.approved += 1;
+    else if (st === 'rejected') stats.rejected += 1;
+    else stats.notSubmitted += 1;
   });
   return stats;
 }
@@ -543,11 +806,44 @@ function gtpStat(label, value, tone, sub) {
 }
 
 function kindLabel(kind) {
-  return kind === 'gtp' ? 'GTP' : 'Vendor approval';
+  if (kind === 'gtp_vendor') return 'GTP + Vendor';
+  return kind === 'gtp' ? 'GTP' : 'Vendor';
 }
 
 function kindBadge(kind) {
+  if (kind === 'gtp_vendor') return '<span class="badge kind-gtp-vendor">GTP + Vendor</span>';
   return `<span class="badge kind-${kind === 'gtp' ? 'gtp' : 'vendor'}">${kind === 'gtp' ? 'GTP' : 'Vendor'}</span>`;
+}
+
+function itemAllApprovals(item) {
+  if (!item || !item.slNo) return [];
+  const sl = Number(item.slNo);
+  return gtpApprovals.filter((row) => Number(row.itemSl) === sl);
+}
+
+function primaryApprovalRecord(item) {
+  const records = itemAllApprovals(item);
+  if (!records.length) return blankApproval();
+  const approved = records.find((r) => r.status === 'Approved');
+  if (approved) return approved;
+  const waiting = records.find((r) => r.status === 'Submitted');
+  if (waiting) return waiting;
+  const blocked = records.find((r) => r.status === 'Hold' || r.status === 'Rejected');
+  if (blocked) return blocked;
+  return records[records.length - 1];
+}
+
+function itemApprovalStatus(item) {
+  const records = itemAllApprovals(item).filter((r) => r.status && r.status !== 'Pending Submission');
+  if (!records.length) return 'not_submitted';
+  const hasPending = records.some((r) => r.status === 'Submitted');
+  const hasApproved = records.some((r) => r.status === 'Approved');
+  const hasRejected = records.some((r) => r.status === 'Rejected' || r.status === 'Hold');
+
+  if (hasPending) return 'pending';
+  if (hasApproved) return 'approved';
+  if (hasRejected) return 'rejected';
+  return 'not_submitted';
 }
 
 function letterKey(kind, letterNo) {
@@ -577,7 +873,12 @@ function letterGroups() {
 }
 
 function findGroup(key) {
-  return letterGroups().find((group) => group.key === key) || null;
+  if (!key) return null;
+  const groups = letterGroups();
+  const direct = groups.find((group) => group.key === key);
+  if (direct) return direct;
+  const trimmed = String(key).trim();
+  return groups.find((group) => group.letterNo === trimmed || group.key.toLowerCase() === trimmed.toLowerCase() || group.letterNo.toLowerCase() === trimmed.toLowerCase()) || null;
 }
 
 function statusSummary(rows) {
@@ -607,9 +908,6 @@ function lettersTable(groups) {
     let action = '';
     if (canDecide && group.waiting) action = `<button type="button" class="tiny strong" data-action="open-letter" data-id="${esc(group.key)}">Review ${group.waiting}</button>`;
     else action = `<button type="button" class="tiny" data-action="open-letter" data-id="${esc(group.key)}">View letter</button>`;
-    if (user.role === 'Admin') {
-      action += ` <button type="button" class="tiny danger" data-action="delete-approval-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Delete</button>`;
-    }
     return `
       <tr class="pick" data-action="open-letter" data-id="${esc(group.key)}" data-q="${esc([group.kind, group.letterNo, ...names, ...group.rows.map(({ record }) => `${record.vendor} ${record.memoNo}`)].join(' '))}">
         <td>${kindBadge(group.kind)}</td>
@@ -624,13 +922,37 @@ function lettersTable(groups) {
 }
 
 function approvalTable(rows, kind) {
-  const headers = ['Sl', 'Material', 'Vendor', 'Letter no.', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Approved Qty'), numHead('Delivered Qty'), 'Submitted', 'Decision'];
-  if (user.role === 'Admin') headers.push('');
-  return table(headers, rows.map((item) => {
-    const records = itemApprovals(item, kind);
-    const submitLabel = kind === 'gtp' ? 'Submit GTP' : 'Submit letter';
-    const primaryRecord = approvalRecord(item, kind);
+  return unifiedApprovalTable(rows);
+}
 
+function unifiedApprovalTable(rows, emptyMsg = 'No items found.') {
+  const headers = [
+    'Sl',
+    'Material',
+    'Scope',
+    'Vendor / Manufacturer',
+    'Letter no.',
+    numHead('LOA Qty'),
+    numHead('Survey Qty'),
+    numHead('Approved Qty'),
+    'Submitted',
+    'Status / Decision',
+    'Actions'
+  ];
+
+  return table(headers, rows.map((item) => {
+    const records = itemAllApprovals(item);
+    const primaryRecord = primaryApprovalRecord(item);
+    const status = itemApprovalStatus(item);
+
+    // Scope Badges
+    let scopeHtml = '<span class="meta">Not submitted</span>';
+    if (records.length) {
+      const kinds = [...new Set(records.map((r) => r.kind))];
+      scopeHtml = kinds.map((k) => kindBadge(k)).join(' ');
+    }
+
+    // Vendor Names
     let vendorHtml = '—';
     if (records.length) {
       const vendorNames = [...new Set(records.map((r) => r.vendor).filter(Boolean))];
@@ -641,23 +963,29 @@ function approvalTable(rows, kind) {
       }
     }
 
+    // Letter Numbers
     let letterHtml = '—';
     if (records.length) {
       const withLetters = records.filter((r) => r.letterNo);
       if (withLetters.length > 1) {
         letterHtml = withLetters.map((r) => `
           <div class="multi-cell-item">
-            <button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(kind, r.letterNo))}">
+            <button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(r.kind, r.letterNo))}">
               <strong>${esc(r.letterNo)}</strong>
             </button>
             ${r.vendor ? `<span class="meta">(${esc(r.vendor)})</span>` : ''}
           </div>
         `).join('');
       } else if (withLetters.length === 1) {
-        letterHtml = `<button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(kind, withLetters[0].letterNo))}">${esc(withLetters[0].letterNo)}</button>`;
+        letterHtml = `<button type="button" class="row-link letter-link" data-action="open-letter" data-id="${esc(letterKey(withLetters[0].kind, withLetters[0].letterNo))}">${esc(withLetters[0].letterNo)}</button>`;
       }
     }
 
+    // Quantities
+    const appQty = approvedBoqQty(item);
+    const approvedQtyDisplay = appQty > 0 ? qtyText(appQty, item.unit) : '—';
+
+    // Submission Dates
     let subDateHtml = '—';
     if (records.length) {
       const dates = records.map((r) => r.subDate ? isoToDmy(r.subDate) : '—');
@@ -668,11 +996,12 @@ function approvalTable(rows, kind) {
       }
     }
 
+    // Decision
     let decisionHtml = '—';
     if (records.length > 1) {
       decisionHtml = records.map((r) => `
         <div class="multi-cell-item">
-          ${decisionCellContent(r)}
+          ${kindBadge(r.kind)} ${decisionCellContent(r)}
         </div>
       `).join('');
     } else if (records.length === 1) {
@@ -681,28 +1010,39 @@ function approvalTable(rows, kind) {
       decisionHtml = decisionCellContent(blankApproval());
     }
 
-    const delBtn = (user.role === 'Admin' && records.some((r) => r.status !== 'Pending Submission'))
-      ? `<button type="button" class="tiny danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}">Delete</button>`
-      : '';
+    // Row Actions
+    let actionBtn = '';
+    const canApprove = isRegion() || isAdmin();
+    const canSubmit = isVendor() || isAdmin();
+    if (canApprove && status === 'pending') {
+      actionBtn = `<button type="button" class="tiny strong" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}" data-mode="decision">Review</button>`;
+    } else if (canSubmit && status !== 'approved') {
+      actionBtn = `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="gtp_vendor" data-mode="submit">Submit</button>`;
+    } else {
+      actionBtn = `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}">Details</button>`;
+    }
 
     const queryParts = [
       searchText(item, materialName(item)),
-      ...records.map((r) => `${r.vendor} ${r.letterNo} ${r.status} ${r.memoNo} ${r.remarks}`)
+      ...records.map((r) => `${r.kind} ${r.vendor} ${r.letterNo} ${r.status} ${r.memoNo} ${r.remarks}`)
     ];
 
     return `
-      <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}" data-q="${esc(queryParts.join(' '))}">
+      <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}" data-q="${esc(queryParts.join(' '))}">
         <td>${item.slNo}</td>
-        <td class="desc" title="${esc(item.description)}">${nameButton(item, `data-id="${kind}"`)} ${submitAction(item, kind, primaryRecord, submitLabel)}</td>
+        <td class="desc" title="${esc(item.description)}">${nameButton(item, `data-id="${primaryRecord.kind || 'gtp_vendor'}"`)}</td>
+        <td>${scopeHtml}</td>
         <td>${vendorHtml}</td>
         <td>${letterHtml}</td>
-        ${qtyCells(item, primaryRecord)}
+        <td class="num">${qtyText(item.loaQty, item.unit)}</td>
+        <td class="num">${surveyText(item)}</td>
+        <td class="num">${approvedQtyDisplay}</td>
         <td>${subDateHtml}</td>
         <td class="decision">${decisionHtml}</td>
-        ${user.role === 'Admin' ? `<td class="row-actions">${delBtn}</td>` : ''}
+        <td class="row-actions">${actionBtn}</td>
       </tr>
     `;
-  }), headers.length);
+  }), headers.length, emptyMsg);
 }
 
 function renderInspect() {
@@ -985,7 +1325,8 @@ function syncInspectDialog() {
   }
   dialog.innerHTML = html;
   dialog.classList.toggle('wide', Boolean(
-    (entryModal && entryModal.page === 'gtp' && (entryModal.mode === 'batch' || entryModal.mode === 'letter')) ||
+    (entryModal && entryModal.page === 'gtp' && (entryModal.mode === 'batch' || entryModal.mode === 'letter' || entryModal.mode === 'rectifyLetter')) ||
+    (entryModal && entryModal.page === 'contract') ||
     (inspModal && (inspModal.mode === 'batch' || inspModal.mode === 'letter'))
   ));
   const batchForm = dialog.querySelector('#form-gtp-batch');
@@ -1245,7 +1586,7 @@ function offerModalForm(item, track) {
       <p class="offer-room span-all">${esc(note)}</p>
       <div class="actions">
         <button class="primary" type="submit">Save offer</button>
-        ${user.role === 'Admin' && waiting.length ? `<button type="button" class="ghost" data-action="inspect-mode" data-mode="approve" data-offer="${esc(waiting[0].id)}">Review submitted offer</button>` : ''}
+        ${isAdmin() && waiting.length ? `<button type="button" class="ghost" data-action="inspect-mode" data-mode="approve" data-offer="${esc(waiting[0].id)}">Review submitted offer</button>` : ''}
       </div>
       <p class="form-msg span-all"></p>
     </form>
@@ -1281,7 +1622,7 @@ function approveModalForm(item, track) {
       <p class="offer-room span-all">${esc(current.premises)}. Local offers are cleared or rejected by RM/ZM. Central offers are forwarded to HQ/ZM.</p>
       <div class="actions">
         <button class="primary" type="submit">Save decision</button>
-        ${user.role === 'Admin' && track.pendingOffer > 0.0001 ? '<button type="button" class="ghost" data-action="inspect-mode" data-mode="offer">New offer</button>' : ''}
+        ${isAdmin() && track.pendingOffer > 0.0001 ? '<button type="button" class="ghost" data-action="inspect-mode" data-mode="offer">New offer</button>' : ''}
       </div>
       <p class="form-msg span-all"></p>
     </form>
@@ -1332,7 +1673,7 @@ function openEntry(sl, id, mode) {
   else if (currentPage === 'daily') prepareDaily(sl, id);
   else if (currentPage === 'receive') prepareReceive(sl, id);
   else if (currentPage === 'boq') {
-    entryModal = { page: 'boq', sl, id: '', mode: mode === 'new' && user.role === 'Admin' ? 'new' : (user.role === 'Admin' ? 'edit' : 'survey') };
+    entryModal = { page: 'boq', sl, id: '', mode: mode === 'new' && isAdmin() ? 'new' : (isAdmin() ? 'edit' : 'survey') };
   } else {
     entryModal = null;
   }
@@ -1346,24 +1687,38 @@ function prepareGtp(sl, id, mode) {
     entryModal = { page: 'gtp', sl: 0, id: '', mode: 'newMaterial' };
     return;
   }
-  const kind = id === 'gtp' || id === 'vendor' ? id : (gtpTab === 'gtp' ? 'gtp' : 'vendor');
   const item = findItem(sl);
-  const record = item ? approvalRecord(item, kind) : null;
-  const waiting = record && ['Submitted', 'Hold', 'Rejected'].includes(record.status);
-  const canSubmit = isVendor() || isAdmin();
+  if (!item) {
+    entryModal = null;
+    return;
+  }
+  const records = itemAllApprovals(item);
+  const waitingRecord = records.find((r) => GTP_WAITING.includes(r.status));
+  const waiting = Boolean(waitingRecord);
+  const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(id) ? id : (waitingRecord?.kind || records[records.length - 1]?.kind || 'gtp_vendor');
   const canApprove = isRegion() || isAdmin();
+  const canSubmit = isVendor() || isAdmin();
+
   let modalMode = 'note';
-  if (canApprove && !isVendor() && waiting) modalMode = 'decision';
-  else if (canSubmit && record && record.status !== 'Approved') {
-    // Opening one item starts a letter with it ticked; more items can be added before submitting.
+  if (mode === 'decision' && canApprove) {
+    modalMode = 'decision';
+  } else if (mode === 'submit' && canSubmit) {
+    const record = approvalRecord(item, kind);
+    entryModal = batchEntry({ kind, picked: [item.slNo], letterNo: record.status === 'Rejected' ? '' : record.letterNo, vendor: record.vendor || '' });
+    return;
+  } else if (canApprove && !isVendor() && waiting) {
+    modalMode = 'decision';
+  } else if (isVendor() && !waiting && itemApprovalStatus(item) !== 'approved') {
+    const record = approvalRecord(item, kind);
     entryModal = batchEntry({ kind, picked: [item.slNo], letterNo: record.status === 'Rejected' ? '' : record.letterNo, vendor: record.vendor || '' });
     return;
   }
-  entryModal = item ? { page: 'gtp', sl: item.slNo, id: kind, mode: modalMode } : null;
+
+  entryModal = { page: 'gtp', sl: item.slNo, id: kind, mode: modalMode };
 }
 
 function batchEntry(draft = {}) {
-  const kind = ['vendor', 'gtp', 'both'].includes(draft.kind) ? draft.kind : (gtpTab === 'gtp' ? 'gtp' : 'vendor');
+  const kind = ['gtp_vendor', 'vendor', 'gtp', 'both'].includes(draft.kind) ? draft.kind : 'gtp_vendor';
   return {
     page: 'gtp',
     sl: 0,
@@ -1408,16 +1763,108 @@ function prepareReceive(sl, id) {
     entryModal = { page: 'receive', sl, id, mode: 'note' };
     return;
   }
-  const canReceive = user.role === 'Store' || user.role === 'Admin';
+  const canReceive = isStore() || isAdmin();
   entryModal = findItem(sl) ? { page: 'receive', sl, id: '', mode: canReceive ? 'srv' : 'note' } : null;
 }
 
 function entryModalHtml() {
   if (entryModal.page === 'boq') return boqModal();
+  if (entryModal.page === 'contract') return contractModal();
   if (entryModal.page === 'gtp') return gtpModal();
   if (entryModal.page === 'billing') return billModal();
   if (entryModal.page === 'daily') return dailyModal();
   if (entryModal.page === 'receive') return receiveModal();
+  return '';
+}
+
+function contractModal() {
+  const contract = contractData || defaultContract();
+  if (entryModal.mode === 'milestones') {
+    return `
+      ${modalTitle('Contract Baseline & Schedule Milestones', 'Update LOA acceptance, L1/L2 schedule status, and baseline completion target.')}
+      <form class="entry entry-plain" id="form-contract-milestones">
+        <label>LOA / PO Number <input name="loaNo" required value="${esc(contract.loaNo || PROJECT_INFO.poNumber)}" /></label>
+        <label>LOA Date <input name="loaDate" type="date" value="${esc(contract.loaDate || '')}" /></label>
+        <label>Date of LOA Acceptance <input name="acceptanceDate" type="date" value="${esc(contract.acceptanceDate || '')}" /></label>
+        <label>Acceptance Letter Ref <input name="acceptanceRef" value="${esc(contract.acceptanceRef || '')}" placeholder="e.g. TE/LOA-ACC/2024/01" /></label>
+        
+        <label>L1/L2 Schedule Submission Date <input name="scheduleSubDate" type="date" value="${esc(contract.scheduleSubDate || '')}" /></label>
+        <label>Schedule Submission Letter Ref <input name="scheduleSubRef" value="${esc(contract.scheduleSubRef || '')}" placeholder="e.g. TE/SCHED/01" /></label>
+        <label class="span-2">Schedule Submission Remarks <input name="scheduleSubRemarks" value="${esc(contract.scheduleSubRemarks || '')}" placeholder="Submission details, revisions, software used (MS Project/Primavera)" /></label>
+        
+        <label>Schedule Approval Date <input name="scheduleApprDate" type="date" value="${esc(contract.scheduleApprDate || '')}" /></label>
+        <label>Schedule Approval Memo <input name="scheduleApprRef" value="${esc(contract.scheduleApprRef || '')}" placeholder="e.g. WBSEDCL/RE/SCHED-APPR/45" /></label>
+        <label>Schedule Approval Status
+          <select name="scheduleApprStatus">
+            <option${contract.scheduleApprStatus === 'Pending' ? ' selected' : ''}>Pending</option>
+            <option${contract.scheduleApprStatus === 'Approved' ? ' selected' : ''}>Approved</option>
+            <option${contract.scheduleApprStatus === 'Conditional' ? ' selected' : ''}>Conditional</option>
+            <option${contract.scheduleApprStatus === 'Revision Requested' ? ' selected' : ''}>Revision Requested</option>
+          </select>
+        </label>
+        <label>Base Target Completion Date <input name="targetCompletionDate" type="date" value="${esc(contract.targetCompletionDate || '')}" /></label>
+        <label class="span-2">Schedule Approval Remarks <input name="scheduleApprRemarks" value="${esc(contract.scheduleApprRemarks || '')}" placeholder="Approval conditions, milestone reviews, remarks" /></label>
+        
+        <div class="actions"><button class="primary" type="submit">Save Contract Milestones</button></div>
+        <p class="form-msg span-all"></p>
+      </form>
+    `;
+  }
+
+  if (entryModal.mode === 'bg') {
+    const isEdit = entryModal.idx !== undefined && entryModal.idx !== null;
+    const bg = isEdit ? (contract.bgEntries[entryModal.idx] || {}) : {};
+    return `
+      ${modalTitle(isEdit ? 'Edit Bank Guarantee' : 'Add Bank Guarantee', 'Security deposit or performance bank guarantee submitted by Turnkey Agency.')}
+      <form class="entry entry-plain" id="form-contract-bg">
+        <input type="hidden" name="idx" value="${isEdit ? entryModal.idx : -1}" />
+        <label>BG Number <input name="bgNo" required value="${esc(bg.bgNo || '')}" placeholder="e.g. 0541BGR000124" /></label>
+        <label>Issuing Bank & Branch <input name="bankName" required value="${esc(bg.bankName || '')}" placeholder="e.g. State Bank of India, Malda Branch" /></label>
+        <label>BG Amount (₹) <input name="amount" type="number" step="any" min="0" required value="${esc(bg.amount || '')}" placeholder="e.g. 15570909" /></label>
+        <label>Submission Date <input name="subDate" type="date" required value="${esc(bg.subDate || '')}" /></label>
+        <label>Expiry Date <input name="expiryDate" type="date" value="${esc(bg.expiryDate || '')}" /></label>
+        <label>Claim Expiry Date <input name="claimDate" type="date" value="${esc(bg.claimDate || '')}" /></label>
+        <label>Status
+          <select name="status">
+            <option${bg.status === 'Active' || !bg.status ? ' selected' : ''}>Active</option>
+            <option${bg.status === 'Released' ? ' selected' : ''}>Released</option>
+            <option${bg.status === 'Expired' ? ' selected' : ''}>Expired</option>
+            <option${bg.status === 'Invoked' ? ' selected' : ''}>Invoked</option>
+          </select>
+        </label>
+        <label class="span-2">Remarks <input name="remarks" value="${esc(bg.remarks || '')}" placeholder="e.g. Initial Contract Performance BG (10% of LOA value)" /></label>
+        <div class="actions"><button class="primary" type="submit">${isEdit ? 'Update BG' : 'Save BG'}</button></div>
+        <p class="form-msg span-all"></p>
+      </form>
+    `;
+  }
+
+  if (entryModal.mode === 'eot') {
+    const isEdit = entryModal.idx !== undefined && entryModal.idx !== null;
+    const eot = isEdit ? (contract.eotEntries[entryModal.idx] || {}) : {};
+    return `
+      ${modalTitle(isEdit ? 'Edit Extension of Time (EOT)' : 'Add Extension of Time (EOT)', 'Record revised completion target date with approval memo details.')}
+      <form class="entry entry-plain" id="form-contract-eot">
+        <input type="hidden" name="idx" value="${isEdit ? entryModal.idx : -1}" />
+        <label>Revised Target Date <input name="revisedDate" type="date" required value="${esc(eot.revisedDate || '')}" /></label>
+        <label>Extension Period (Days) <input name="extensionDays" type="number" min="0" value="${esc(eot.extensionDays || '')}" placeholder="e.g. 90" /></label>
+        <label>Approval Memo / Letter No. <input name="memoNo" required value="${esc(eot.memoNo || '')}" placeholder="e.g. WBSEDCL/RE/EOT/2025/112" /></label>
+        <label>Approval Date <input name="approvalDate" type="date" value="${esc(eot.approvalDate || '')}" /></label>
+        <label>Approved By <input name="approvedBy" value="${esc(eot.approvedBy || 'Chief Engineer (Distribution)')}" placeholder="e.g. CE / SE / WBSEDCL" /></label>
+        <label>Status
+          <select name="status">
+            <option${eot.status === 'Approved' || !eot.status ? ' selected' : ''}>Approved</option>
+            <option${eot.status === 'Pending' ? ' selected' : ''}>Pending</option>
+            <option${eot.status === 'Under Review' ? ' selected' : ''}>Under Review</option>
+            <option${eot.status === 'Rejected' ? ' selected' : ''}>Rejected</option>
+          </select>
+        </label>
+        <label class="span-2">Reason / Grounds of EOT <input name="reason" value="${esc(eot.reason || '')}" placeholder="e.g. Monsoon flooding, RoW clearance delay at Bandh Road" /></label>
+        <div class="actions"><button class="primary" type="submit">${isEdit ? 'Update EOT' : 'Save EOT'}</button></div>
+        <p class="form-msg span-all"></p>
+      </form>
+    `;
+  }
   return '';
 }
 
@@ -1499,31 +1946,34 @@ function gtpNewMaterialModal() {
 function gtpModal() {
   if (entryModal.mode === 'newMaterial') return gtpNewMaterialModal();
   if (entryModal.mode === 'batch') return gtpBatchModal();
-  if (entryModal.mode === 'letter') return gtpLetterModal();
+  if (entryModal.mode === 'letter' || entryModal.mode === 'rectifyLetter') return gtpLetterModal();
   const item = findItem(entryModal.sl);
   if (!item) return '';
-  const kind = entryModal.id === 'gtp' ? 'gtp' : 'vendor';
-  const records = itemApprovals(item, kind);
-  const primaryRecord = approvalRecord(item, kind);
-  const label = kind === 'gtp' ? 'GTP' : 'Vendor';
+  const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(entryModal.id) ? entryModal.id : 'gtp_vendor';
+  const records = itemAllApprovals(item);
+  const label = kindLabel(kind);
   const sub = `${label} · LOA ${qtyText(item.loaQty, item.unit)} · Survey ${surveyText(item)}`;
   let body = gtpNotes(records, item, kind);
   if (entryModal.mode === 'decision') body = gtpDecisionForm(item, kind);
   const canSubmit = isVendor() || isAdmin();
-  const canDecide = (isRegion() || isAdmin()) && records.some((r) => GTP_WAITING.includes(r.status));
+  const canDecide = isRegion() || isAdmin();
   return `
     ${modalTitle(`Sl ${item.slNo} · ${esc(materialName(item))}`, sub)}
     ${body}
     <div class="actions">
-      ${canSubmit ? `<button type="button" class="ghost" data-action="batch-new" data-kind="${kind}" data-sl="${item.slNo}">Submit new letter</button>` : ''}
-      ${entryModal.mode !== 'decision' && canDecide ? `<button type="button" class="ghost" data-action="entry-mode" data-mode="decision">Decision</button>` : ''}
-      ${user.role === 'Admin' && records.length ? `<button type="button" class="ghost danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}">Delete all for this item</button>` : ''}
+      ${entryModal.mode === 'decision' ? `<button type="button" class="ghost" data-action="entry-mode" data-mode="note">← View submission history</button>` : ''}
+      ${canSubmit && entryModal.mode !== 'decision' ? `<button type="button" class="ghost" data-action="batch-new" data-kind="${kind}" data-sl="${item.slNo}">Submit new letter</button>` : ''}
+      ${entryModal.mode !== 'decision' && canDecide ? `<button type="button" class="ghost" data-action="entry-mode" data-mode="decision">Approve / Reject</button>` : ''}
+      ${isAdmin() && records.some((r) => r.status === 'Rejected' || r.status === 'Hold' || r.status === 'Approved') ? `<button type="button" class="ghost" data-action="reset-approval-decision" data-sl="${item.slNo}" data-kind="${kind}">↺ Reset decision to Submitted</button>` : ''}
+      ${isAdmin() && records.length ? `<button type="button" class="ghost danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}">Delete all for this item</button>` : ''}
     </div>
   `;
 }
 
 function batchKinds(kind) {
-  return kind === 'both' ? ['vendor', 'gtp'] : [kind === 'gtp' ? 'gtp' : 'vendor'];
+  if (kind === 'both' || kind === 'gtp_vendor') return ['gtp_vendor'];
+  if (kind === 'gtp') return ['gtp'];
+  return ['vendor'];
 }
 
 function gtpBatchModal() {
@@ -1533,13 +1983,13 @@ function gtpBatchModal() {
   const picked = new Set(draft.picked.map(Number));
   const rowHint = 'Vendor name / Manufacturer (required)';
   const rows = boqItems.filter(isMaterial).map((item) => {
-    const open = kinds.filter((kind) => approvalRecord(item, kind).status !== 'Approved');
+    const open = kinds.filter((k) => approvalRecord(item, k).status !== 'Approved');
     const locked = open.length === 0;
     const checked = !locked && picked.has(item.slNo);
-    const resubmit = open.some((kind) => GTP_WAITING.includes(approvalRecord(item, kind).status));
-    const existing = approvalRecord(item, 'vendor').vendor;
+    const resubmit = open.some((k) => GTP_WAITING.includes(approvalRecord(item, k).status));
+    const existing = approvalRecord(item, 'vendor').vendor || approvalRecord(item, 'gtp_vendor').vendor;
     const vendorValue = draft.vendors[item.slNo] ?? (isRealVendor(existing) ? existing : '');
-    const status = kinds.map((kind) => `<span class="pick-kind">${kinds.length > 1 ? `<em>${kind === 'gtp' ? 'GTP' : 'Vendor'}</em>` : ''}${miniStatus(approvalRecord(item, kind))}</span>`).join('');
+    const status = kinds.map((k) => `<span class="pick-kind">${kinds.length > 1 ? `<em>${kindLabel(k)}</em>` : ''}${miniStatus(approvalRecord(item, k))}</span>`).join('');
     const note = locked ? ' · already approved' : resubmit ? ' · will be re-submitted' : '';
     return `
       <div class="pick-row${locked ? ' locked' : ''}${checked ? ' on' : ''}" data-q="${esc(searchText(item, materialName(item), vendorValue))}">
@@ -1561,7 +2011,7 @@ function gtpBatchModal() {
       <div class="field span-all">
         <span>Submitting</span>
         <span class="choice">
-          ${[['vendor', 'Vendor approval'], ['gtp', 'GTP'], ['both', 'Vendor + GTP together']].map(([value, label]) => `<button type="button" class="choice-btn${draft.kind === value ? ' active' : ''}" data-action="batch-kind" data-kind="${value}">${label}</button>`).join('')}
+          ${[['gtp_vendor', 'GTP + Vendor (Combined)'], ['gtp', 'GTP only'], ['vendor', 'Vendor only']].map(([value, label]) => `<button type="button" class="choice-btn${draft.kind === value ? ' active' : ''}" data-action="batch-kind" data-kind="${value}">${label}</button>`).join('')}
         </span>
       </div>
       <label>Letter no. <input name="letterNo" required placeholder="e.g. TE/MALDA/2026/014" value="${esc(draft.letterNo)}" /></label>
@@ -1586,7 +2036,7 @@ function gtpBatchModal() {
 }
 
 function gtpBatchPreviewModal(draft) {
-  const typeLabel = draft.kind === 'both' ? 'Vendor approval + GTP' : draft.kind === 'gtp' ? 'GTP submission' : 'Vendor approval';
+  const typeLabel = draft.kind === 'gtp_vendor' || draft.kind === 'both' ? 'GTP + Vendor (Combined)' : draft.kind === 'gtp' ? 'GTP submission' : 'Vendor approval';
   const payloads = draft.payloads || [];
   const uniqueSl = [...new Set(payloads.map((p) => p.itemSl))];
 
@@ -1632,10 +2082,13 @@ function gtpLetterModal() {
   const canDecide = (isRegion() || isAdmin()) && group.waiting > 0;
   const canSubmit = isVendor() || isAdmin();
   const sub = `${kindLabel(group.kind)} · Submitted ${group.subDate ? isoToDmy(group.subDate) : '—'} · ${group.rows.length} ${group.rows.length === 1 ? 'material' : 'materials'}`;
-  const adminActions = user.role === 'Admin'
-    ? `<div class="actions" style="margin-top: 12px; display: flex; gap: 8px;">
+  const canDeleteLetter = isAdmin() && group.rows.every(({ record }) => record.status !== 'Approved');
+  const canResetLetter = isAdmin() && group.rows.some(({ record }) => record.status === 'Approved' || record.status === 'Rejected' || record.status === 'Hold');
+  const adminActions = isAdmin()
+    ? `<div class="actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
          <button type="button" class="ghost" data-action="open-rectify-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">✏️ Rectify Letter Tagging</button>
-         <button type="button" class="ghost danger" data-action="delete-approval-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Delete letter</button>
+         ${canResetLetter ? `<button type="button" class="ghost" data-action="reset-letter-decision" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">↺ Reset decisions to Submitted</button>` : ''}
+         ${canDeleteLetter ? `<button type="button" class="ghost danger" data-action="delete-approval-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Delete letter</button>` : ''}
        </div>`
     : '';
   return `
@@ -1646,8 +2099,18 @@ function gtpLetterModal() {
 }
 
 function gtpRectifyLetterModal(group) {
-  if (!group) return modalTitle('Letter not found', 'Cannot rectify missing letter.');
+  if (!group) {
+    return `
+      ${modalTitle('Letter Not Found', 'Could not locate the letter details in the register.')}
+      <div class="actions" style="margin-top: 16px;">
+        <button type="button" class="ghost" data-action="cancel-rectify-letter">Back</button>
+      </div>
+    `;
+  }
   const vendorVal = group.rows[0]?.record?.vendor || '';
+  const materialList = group.rows
+    .map(({ item }) => `<li><strong>Sl ${item.slNo}:</strong> ${esc(materialName(item))}</li>`)
+    .join('');
   return `
     ${modalTitle(`Rectify Tagging: ${esc(group.letterNo)}`, 'Admin tool to rectify mistaken tagging (Vendor vs GTP), letter reference number, vendor name, or date.')}
     <form class="entry entry-plain" id="form-rectify-letter">
@@ -1656,8 +2119,9 @@ function gtpRectifyLetterModal(group) {
 
       <label class="span-2">Approval Type / Tagging
         <select name="newKind" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
-          <option value="vendor"${group.kind === 'vendor' ? ' selected' : ''}>Vendor Approval (kind = vendor)</option>
-          <option value="gtp"${group.kind === 'gtp' ? ' selected' : ''}>GTP Approval (kind = gtp)</option>
+          <option value="gtp_vendor"${group.kind === 'gtp_vendor' ? ' selected' : ''}>GTP + Vendor Combined (kind = gtp_vendor)</option>
+          <option value="gtp"${group.kind === 'gtp' ? ' selected' : ''}>GTP Approval only (kind = gtp)</option>
+          <option value="vendor"${group.kind === 'vendor' ? ' selected' : ''}>Vendor Approval only (kind = vendor)</option>
         </select>
       </label>
 
@@ -1672,6 +2136,13 @@ function gtpRectifyLetterModal(group) {
       <label class="span-2">Submission Date
         <input name="newSubDate" type="date" value="${esc(group.subDate || '')}" />
       </label>
+
+      <div class="span-all" style="background: var(--surface-2, #f8fafc); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-top: 4px;">
+        <span style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">Materials covered under this letter (${group.rows.length}):</span>
+        <ul style="margin: 6px 0 0 16px; padding: 0; font-size: 0.85rem; line-height: 1.5; color: var(--text);">
+          ${materialList}
+        </ul>
+      </div>
 
       <div class="actions span-all" style="display: flex; gap: 8px; margin-top: 12px;">
         <button class="primary" type="submit">Save Rectified Tagging</button>
@@ -1700,17 +2171,13 @@ function letterSummary(group) {
 }
 
 function letterDecisionForm(group) {
-  const choices = [['Approved', 'Approve'], ['Hold', 'Hold'], ['Rejected', 'Reject'], ['Skip', 'Skip']];
+  const choices = [['Approved', 'Approve'], ['Rejected', 'Reject']];
   const rows = group.rows.map(({ item, record }) => {
     const open = GTP_WAITING.includes(record.status);
-    const initial = record.status === 'Rejected' ? 'Skip' : 'Approved';
-    const stored = Number(record.approvedQty);
+    const initial = record.status === 'Rejected' ? 'Rejected' : 'Approved';
     const decision = open
       ? `<div class="seg-group" role="radiogroup" aria-label="Decision for Sl ${item.slNo}">${choices.map(([value, label]) => `<label class="seg seg-${value.toLowerCase()}"><input type="radio" name="dec-${item.slNo}" value="${value}" ${value === initial ? 'checked' : ''} /><span>${label}</span></label>`).join('')}</div>`
       : miniStatus(record);
-    const qty = open
-      ? `<input class="qty-in" type="number" name="qty-${item.slNo}" min="0" step="any" value="${esc(stored > 0 ? stored : item.loaQty)}" aria-label="Approved quantity for Sl ${item.slNo}" />`
-      : (record.status === 'Approved' ? qtyText(stored > 0 ? stored : item.loaQty, item.unit) : '—');
     return `
       <tr class="${open ? 'dec-row' : 'dec-done'}">
         <td>${item.slNo}</td>
@@ -1718,7 +2185,6 @@ function letterDecisionForm(group) {
         <td class="num">${qtyText(item.loaQty, item.unit)}<span class="meta">Survey ${surveyText(item)}</span></td>
         <td>${miniStatus(record)}</td>
         <td>${decision}</td>
-        <td class="num">${qty}</td>
       </tr>
     `;
   });
@@ -1729,16 +2195,15 @@ function letterDecisionForm(group) {
         <span class="batch-label">Set every open row to</span>
         <span class="choice">
           <button type="button" class="choice-btn" data-action="batch-set" data-decision="Approved">Approve all</button>
-          <button type="button" class="choice-btn" data-action="batch-set" data-decision="Hold">Hold all</button>
           <button type="button" class="choice-btn" data-action="batch-set" data-decision="Rejected">Reject all</button>
         </span>
       </div>
       <div class="span-all batch-sheet">
-        ${table(['Sl', 'Material / vendor', numHead('LOA Qty'), 'Now', 'Decision', numHead('Approve qty')], rows, 6)}
+        ${table(['Sl', 'Material / vendor', numHead('LOA Qty'), 'Now', 'Decision'], rows, 5)}
       </div>
       <label>Memo no. <input name="memoNo" required placeholder="Ref. memo no." /></label>
       <label>Memo date <input name="date" type="date" required value="${todayISO()}" /></label>
-      <label class="span-2">Remarks <input name="remarks" placeholder="Required when any row is held or rejected" /></label>
+      <label class="span-2">Remarks <input name="remarks" placeholder="Required when any row is rejected" /></label>
       <div class="batch-foot span-all">
         <span class="batch-count" data-count></span>
         <button class="primary" type="submit" data-submit>Save decisions</button>
@@ -1749,6 +2214,10 @@ function letterDecisionForm(group) {
 }
 
 function gtpDecisionForm(item, kind) {
+  const records = itemApprovals(item, kind);
+  const waitingRecord = records.find((r) => GTP_WAITING.includes(r.status)) || approvalRecord(item, kind);
+  const defaultVendor = waitingRecord.vendor || approvalRecord(item, 'vendor').vendor || '';
+  const defaultLetter = waitingRecord.letterNo || '';
   return `
     <form class="entry entry-plain" id="form-decision">
       <input type="hidden" name="kind" value="${kind}" />
@@ -1758,13 +2227,14 @@ function gtpDecisionForm(item, kind) {
         <span>Decision</span>
         <span class="choice">
           <button type="button" class="choice-btn active" data-action="pick-decision" data-decision="Approved">Approve</button>
-          <button type="button" class="choice-btn" data-action="pick-decision" data-decision="Hold">Hold</button>
           <button type="button" class="choice-btn" data-action="pick-decision" data-decision="Rejected">Reject</button>
         </span>
       </div>
-      <label>Memo no. <input name="memoNo" required placeholder="Ref. memo no." /></label>
-      <label>Date <input name="date" type="date" required value="${todayISO()}" /></label>
-      <label class="span-2">Remarks <input name="remarks" required placeholder="Remark for this decision" /></label>
+      <label>Vendor / Manufacturer <input name="vendor" value="${esc(defaultVendor)}" placeholder="Vendor or manufacturer" /></label>
+      <label>Letter ref. no. <input name="letterNo" value="${esc(defaultLetter)}" placeholder="Submission letter reference" /></label>
+      <label>Approval memo no. <input name="memoNo" required placeholder="WBSEDCL approval memo no." /></label>
+      <label>Approval date <input name="date" type="date" required value="${todayISO()}" /></label>
+      <label class="span-2">Remarks <input name="remarks" placeholder="Required when rejected, optional if approved" /></label>
       <div class="actions"><button class="primary" type="submit">Save decision</button></div>
       <p class="form-msg span-all"></p>
     </form>
@@ -1774,24 +2244,28 @@ function gtpDecisionForm(item, kind) {
 function gtpNotes(records, item, kind) {
   if (!records || !records.length) return '<p class="quiet">Not submitted yet.</p>';
   return records.map((record) => {
-    const lines = [record.status || 'Not submitted'];
+    const lines = [`${kindBadge(record.kind)} <strong>${esc(record.status || 'Not submitted')}</strong>`];
     if (record.vendor) lines.push(`Vendor: ${record.vendor}`);
     if (record.letterNo) lines.push(`Letter: ${record.letterNo}`);
     if (record.subDate) lines.push(`Submitted: ${isoToDmy(record.subDate)}`);
     if (record.memoNo || record.actionDate) lines.push([record.actionDate ? isoToDmy(record.actionDate) : '', record.memoNo ? `Memo: ${record.memoNo}` : ''].filter(Boolean).join(' · '));
     if (record.remarks) lines.push(`Remarks: ${record.remarks}`);
-    const adminBtns = user.role === 'Admin' && record.letterNo
-      ? `<br><div style="display:flex; gap:6px; margin-top:4px;">
-           <button type="button" class="tiny" data-action="open-rectify-letter" data-kind="${kind}" data-letter="${esc(record.letterNo)}">✏️ Rectify tagging</button>
-           <button type="button" class="tiny danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${kind}" data-letter="${esc(record.letterNo)}">Delete</button>
+    const canDeleteRecord = isAdmin() && record.letterNo && record.status !== 'Approved';
+    const canResetRecord = isAdmin() && (record.status === 'Approved' || record.status === 'Rejected' || record.status === 'Hold');
+    const recKind = record.kind || kind || 'gtp_vendor';
+    const adminBtns = isAdmin() && record.letterNo
+      ? `<br><div style="display:flex; gap:6px; margin-top:4px; flex-wrap:wrap;">
+           <button type="button" class="tiny" data-action="open-rectify-letter" data-kind="${recKind}" data-letter="${esc(record.letterNo)}" data-sl="${item.slNo}">✏️ Rectify tagging</button>
+           ${canResetRecord ? `<button type="button" class="tiny" data-action="reset-approval-decision" data-sl="${item.slNo}" data-kind="${recKind}" data-letter="${esc(record.letterNo)}">↺ Reset to Submitted</button>` : ''}
+           ${canDeleteRecord ? `<button type="button" class="tiny danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${recKind}" data-letter="${esc(record.letterNo)}">Delete</button>` : ''}
          </div>`
       : '';
     const openBtn = record.letterNo
-      ? `<br><button type="button" class="tiny" style="margin-top:4px;" data-action="open-letter" data-id="${esc(letterKey(kind, record.letterNo))}">Open letter ${esc(record.letterNo)}</button>`
+      ? `<br><button type="button" class="tiny" style="margin-top:4px;" data-action="open-letter" data-id="${esc(letterKey(recKind, record.letterNo))}">Open letter ${esc(record.letterNo)}</button>`
       : '';
     return `
       <div class="gtp-note-card">
-        <p class="quiet" style="margin:0;">${lines.map((line) => esc(line)).join('<br>')}${openBtn}${adminBtns}</p>
+        <p class="quiet" style="margin:0;">${lines.map((line) => line.startsWith('<') ? line : esc(line)).join('<br>')}${openBtn}${adminBtns}</p>
       </div>
     `;
   }).join('');
@@ -1863,7 +2337,167 @@ function invoiceForm() {
   `;
 }
 
+const ACTIVITY_TYPES = [
+  'Joint Measurement',
+  'Site Visit / Joint Inspection',
+  'Route Survey & Trench Alignment',
+  'Feeder Shutdown / Tripping Coordination',
+  'HDD Trial Boring & Utility Detection',
+  'Road Cutting / Municipal & Police Coordination',
+  'Right of Way (RoW) / Local Issue Clearance',
+  'Material Shifting & Mobilization',
+  'Cable Trenching & Laying Supervision',
+  'Site Restoration & Final Cleanup',
+  'Other'
+];
+
+function activityNewModal() {
+  return `
+    ${modalTitle('Log Site Activity', 'Record joint site visits, measurements, feeder shutdowns, or inter-agency meetings.')}
+    <form class="entry entry-plain" id="form-site-activity" style="display: flex; flex-direction: column; gap: 14px; margin-top: 4px;">
+      
+      <!-- Section 1: Basic Information -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569; text-transform: uppercase;">
+          Activity Date <span style="color: #ef4444;">*</span>
+          <input name="date" type="date" required value="${todayISO()}" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;" />
+        </label>
+
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569; text-transform: uppercase;">
+          Activity Classification <span style="color: #ef4444;">*</span>
+          <select name="activityType" id="select-activity-type" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff; color: var(--text);">
+            ${ACTIVITY_TYPES.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}
+          </select>
+        </label>
+
+        <label id="custom-activity-wrapper" hidden style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569; text-transform: uppercase;">
+          Specify Custom Activity Name <span style="color: #ef4444;">*</span>
+          <input name="customType" placeholder="e.g. Tree Trimming NOC / Cable Drum Shifting" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;" />
+        </label>
+      </div>
+
+      <!-- Section 2: Representatives / Attendees -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11.5px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+          <span>👥 Attendees & Stakeholders</span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569;">
+            <span>🏢 Agency Representative <span style="color: #ef4444;">*</span></span>
+            <input name="agencyRep" required placeholder="Name, Designation (Tarun Enterprise)" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;" />
+          </label>
+
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569;">
+            <span>⚡ WBSEDCL Representative</span>
+            <input name="wbsedclRep" placeholder="Name, Designation (Division/Subdivision)" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;" />
+          </label>
+
+          <label style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569;">
+            <span>🏛️ Other Representative / Authority (Optional)</span>
+            <input name="otherRep" placeholder="e.g. Traffic Police OC / Municipal Engineer / Ward Councilor / Land Owner" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Section 3: Quantity & Site Notes -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;">
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569;">
+          <span>📏 Quantity / Stretch Length (Optional)</span>
+          <input name="qty" placeholder="e.g. 250 m stretch or 2 joint bays" style="padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;" />
+        </label>
+
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; color: #475569;">
+          <span>📝 Site Description & Meeting Minutes</span>
+          <textarea name="description" rows="3" placeholder="Provide detailed notes on site findings, stretch inspected, decisions made, obstacles resolved, or next action items…" style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff; font-family: inherit; resize: vertical;"></textarea>
+        </label>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 4px;">
+        <button type="button" class="ghost" data-action="close-modal" style="padding: 8px 16px;">Cancel</button>
+        <button class="primary" type="submit" style="padding: 8px 20px; font-weight: 600;">Save Activity Record</button>
+      </div>
+      <p class="form-msg" style="margin: 0;"></p>
+    </form>
+  `;
+}
+
+function activityViewModal(act) {
+  const badge = activityBadge(act.activityType);
+  return `
+    ${modalTitle(`Site Activity Details`, `${esc(formatDisplayDate(act.date))} · ${badge}`)}
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 6px;">
+
+      <!-- Top Highlights Bar -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+        <div>
+          <span style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.03em;">Activity Type</span>
+          <div style="margin-top: 4px;">${badge}</div>
+        </div>
+        <div>
+          <span style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.03em;">Date</span>
+          <div style="font-weight: 600; font-size: 14px; margin-top: 4px; color: #0f172a;">${esc(formatDisplayDate(act.date))}</div>
+        </div>
+        <div>
+          <span style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.03em;">Quantity / Stretch</span>
+          <div style="font-weight: 600; font-size: 14px; margin-top: 4px; color: #0f172a;">${esc(act.qty || '—')}</div>
+        </div>
+        <div>
+          <span style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.03em;">Logged By</span>
+          <div style="font-weight: 500; font-size: 13px; margin-top: 4px; color: #334155;">${esc(act.createdBy || 'Agency')}</div>
+        </div>
+      </div>
+
+      <!-- Attendees Card -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px;">
+          👥 Attendees & Representatives
+        </div>
+        <div style="display: grid; gap: 8px; font-size: 13.5px;">
+          <div style="display: flex; gap: 8px;">
+            <span style="font-weight: 600; min-width: 170px; color: #334155;">🏢 Agency Representative:</span>
+            <span style="color: #0f172a;">${esc(act.agencyRep)}</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <span style="font-weight: 600; min-width: 170px; color: #334155;">⚡ WBSEDCL Representative:</span>
+            <span style="color: #0f172a;">${esc(act.wbsedclRep || '—')}</span>
+          </div>
+          ${act.otherRep ? `
+            <div style="display: flex; gap: 8px;">
+              <span style="font-weight: 600; min-width: 170px; color: #334155;">🏛️ Other Representative:</span>
+              <span style="color: #0f172a;">${esc(act.otherRep)}</span>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- Notes / Description -->
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px;">
+          📝 Site Notes & Observations
+        </div>
+        <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">${esc(act.description || 'No detailed observations recorded.')}</p>
+      </div>
+
+      <!-- Footer Actions -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+        <div>
+          ${isAdmin() ? `<button type="button" class="ghost danger" data-action="delete-activity" data-id="${esc(act.id)}" style="padding: 6px 12px; font-size: 13px;">Delete Record</button>` : ''}
+        </div>
+        <button type="button" class="ghost" data-action="close-modal" style="padding: 8px 18px;">Close</button>
+      </div>
+    </div>
+  `;
+}
+
 function dailyModal() {
+  if (entryModal.mode === 'newActivity') return activityNewModal();
+  if (entryModal.mode === 'viewActivity') {
+    const act = siteActivities.find((row) => row.id === entryModal.id);
+    if (!act) return '';
+    return activityViewModal(act);
+  }
   if (entryModal.id) {
     const log = dailyLogs.find((row) => row.id === entryModal.id);
     if (!log) return '';
@@ -1989,11 +2623,11 @@ function invoiceRows(type) {
   const rows = invoices.filter((invoice) => invoice.type === type)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   const headers = ['Invoice', 'Date', 'Items', numHead('Net'), 'Status'];
-  if (user.role === 'Admin') headers.push('');
+  if (isAdmin()) headers.push('');
   return table(headers, rows.map((invoice) => {
     const names = invoice.lines.map((line) => line.itemName).join(' ');
     const net = sum(invoice.lines, (line) => line.net);
-    const delBtn = user.role === 'Admin' ? `<td class="row-actions"><button type="button" class="tiny danger" data-action="delete-invoice" data-id="${esc(invoice.id)}">Delete</button></td>` : '';
+    const delBtn = isAdmin() ? `<td class="row-actions"><button type="button" class="tiny danger" data-action="delete-invoice" data-id="${esc(invoice.id)}">Delete</button></td>` : '';
     return `
       <tr class="pick" data-action="open-entry" data-id="${esc(invoice.id)}" data-q="${esc(`${invoice.invoiceNo} ${invoice.type} ${invoice.payStatus} ${names}`)}">
         <td><button type="button" class="row-link" data-action="open-entry" data-id="${esc(invoice.id)}">${esc(invoice.invoiceNo)}</button></td>
@@ -2013,12 +2647,16 @@ function renderDaily() {
   const tabs = [
     ['supply', 'Part-A (Supply)'],
     ['erection', 'Part-B (Erection)'],
-    ['logs', 'Daily Logs'],
+    ['logs', 'Daily BOQ Logs'],
+    ['activities', `Site Activities (${siteActivities.length})`],
     ['pending', pendingLabel]
   ];
-  const hint = (isRegion() || isAdmin())
+  let hint = (isRegion() || isAdmin())
     ? 'Verify pending daily progress entries submitted by vendors to count them into executed progress.'
     : 'Select Supply or Erection item to enter today\'s site progress quantity for Region approval.';
+  if (dailyTab === 'activities') {
+    hint = 'Log and review site visits, joint measurements, shutdowns, route inspections, and inter-agency coordination.';
+  }
   
   let body = '';
   if (dailyTab === 'supply') {
@@ -2027,6 +2665,8 @@ function renderDaily() {
     body = dailyItems('Part-B (Erection)');
   } else if (dailyTab === 'logs') {
     body = dailyLogTable(false);
+  } else if (dailyTab === 'activities') {
+    body = dailyActivitiesTable();
   } else {
     body = dailyLogTable(true);
   }
@@ -2036,6 +2676,58 @@ function renderDaily() {
     ${tabBar('daily', tabs, dailyTab)}
     ${body}
   `;
+}
+
+function dailyActivitiesTable() {
+  const canLogActivity = isVendor() || isAdmin();
+  const topActions = `
+    <div class="actions" style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px;">
+      <span class="meta">${siteActivities.length} ${siteActivities.length === 1 ? 'activity record' : 'activity records'}</span>
+      ${canLogActivity ? `<button type="button" class="primary" data-action="activity-new">+ Log Site Activity</button>` : ''}
+    </div>
+  `;
+  const rows = [...siteActivities].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const tableHtml = table([
+    'Date',
+    'Activity',
+    'Agency Representative',
+    'WBSEDCL Representative',
+    'Other Representative',
+    numHead('Qty (Optional)'),
+    'Description',
+    'Action'
+  ], rows.map((act) => {
+    const badge = activityBadge(act.activityType);
+    const viewBtn = `<button type="button" class="tiny" data-action="open-activity" data-id="${esc(act.id)}">View</button>`;
+    const delBtn = isAdmin() ? `<button type="button" class="tiny danger" data-action="delete-activity" data-id="${esc(act.id)}">Delete</button>` : '';
+    const descPreview = act.description ? (act.description.length > 55 ? act.description.slice(0, 55) + '…' : act.description) : '—';
+    return `
+      <tr class="pick" data-action="open-activity" data-id="${esc(act.id)}" data-q="${esc(`${act.date} ${act.activityType} ${act.agencyRep} ${act.wbsedclRep} ${act.otherRep} ${act.description}`)}">
+        <td><button type="button" class="row-link" data-action="open-activity" data-id="${esc(act.id)}">${esc(act.date)}</button></td>
+        <td>${badge}</td>
+        <td><strong>${esc(act.agencyRep)}</strong></td>
+        <td>${esc(act.wbsedclRep || '—')}</td>
+        <td>${esc(act.otherRep || '—')}</td>
+        <td class="num">${esc(act.qty || '—')}</td>
+        <td class="desc" title="${esc(act.description)}">${esc(descPreview)}</td>
+        <td class="row-actions"><div style="display:flex; gap:4px;">${viewBtn}${delBtn}</div></td>
+      </tr>
+    `;
+  }), 8, 'No random site activities logged yet. Click "+ Log Site Activity" to add one.');
+  return topActions + tableHtml;
+}
+
+function activityBadge(type) {
+  const toneMap = {
+    'Joint Measurement': 'ok',
+    'Site Visit / Joint Inspection': 'wait',
+    'Route Survey & Trench Alignment': 'hold',
+    'Feeder Shutdown / Tripping Coordination': 'bad',
+    'Right of Way (RoW) / Local Issue Clearance': 'hold',
+    'Road Cutting / Municipal & Police Coordination': 'hold'
+  };
+  const tone = toneMap[type] || 'idle';
+  return `<span class="badge ${tone}">${esc(type)}</span>`;
 }
 
 function dailyItems(partFilter) {
@@ -2098,6 +2790,12 @@ function onClick(event) {
     openPage(button.dataset.page);
     return;
   }
+  if (action === 'open-contract-overview') {
+    openPage('boq');
+    boqTab = 'overview';
+    paint();
+    return;
+  }
   if (action === 'print') {
     window.print();
     return;
@@ -2105,12 +2803,30 @@ function onClick(event) {
   if (action === 'page-tab') {
     const tab = button.dataset.tab;
     const group = button.dataset.group;
-    if (group === 'boq') boqPart = tab === 'erection' ? 'Part-B (Erection)' : 'Part-A (Material)';
-    if (group === 'gtp') gtpTab = tab === 'gtp' || tab === 'letters' ? tab : 'vendor';
+    if (group === 'boq') {
+      boqTab = ['overview', 'material', 'erection'].includes(tab) ? tab : 'overview';
+      if (tab === 'erection') boqPart = 'Part-B (Erection)';
+      else if (tab === 'material') boqPart = 'Part-A (Material)';
+    }
+    if (group === 'gtp') gtpTab = ['all', 'not_submitted', 'pending', 'approved', 'rejected', 'letters'].includes(tab) ? tab : 'all';
     if (group === 'bill') billTab = tab === 'erection' ? 'erection' : 'supply';
-    if (group === 'daily') dailyTab = ['supply', 'erection', 'logs', 'pending'].includes(tab) ? tab : 'supply';
+    if (group === 'daily') dailyTab = ['supply', 'erection', 'logs', 'activities', 'pending'].includes(tab) ? tab : 'supply';
     if (group === 'receive') receiveTab = tab === 'receipts' ? 'receipts' : 'materials';
     paint();
+    return;
+  }
+  if (action === 'gtp-tab') {
+    const tab = button.dataset.tab;
+    gtpTab = ['all', 'not_submitted', 'pending', 'approved', 'rejected', 'letters'].includes(tab) ? tab : 'all';
+    paint();
+    return;
+  }
+  if (action === 'reset-approval-decision') {
+    resetApprovalDecision(Number(button.dataset.sl), button.dataset.kind || '', button.dataset.letter || '');
+    return;
+  }
+  if (action === 'reset-letter-decision') {
+    resetLetterDecision(button.dataset.kind || '', button.dataset.letter || '');
     return;
   }
   if (action === 'open-entry') {
@@ -2281,14 +2997,24 @@ function onClick(event) {
     return;
   }
   if (action === 'open-rectify-letter') {
-    const key = letterKey(button.dataset.kind, button.dataset.letter);
-    entryModal = { page: 'gtp', sl: 0, id: key, mode: 'rectifyLetter' };
+    const kind = button.dataset.kind || 'gtp';
+    const letter = button.dataset.letter || '';
+    const sl = Number(button.dataset.sl) || 0;
+    const key = letterKey(kind, letter);
+    entryModal = { page: 'gtp', sl, id: key, kind, letter, mode: 'rectifyLetter' };
     inspectOpenedAt = Date.now();
     paint();
     return;
   }
   if (action === 'cancel-rectify-letter') {
-    if (entryModal) entryModal.mode = 'letter';
+    if (entryModal) {
+      if (entryModal.sl) {
+        entryModal.mode = 'note';
+        entryModal.id = entryModal.kind || 'gtp';
+      } else {
+        entryModal.mode = 'letter';
+      }
+    }
     paint();
     return;
   }
@@ -2309,6 +3035,71 @@ function onClick(event) {
   if (action === 'delete-approval') deleteApproval(Number(button.dataset.sl), button.dataset.kind, button.dataset.letter);
   if (action === 'delete-approval-letter') deleteApprovalLetter(button.dataset.kind, button.dataset.letter);
   if (action === 'delete-invoice') deleteInvoice(button.dataset.id);
+  if (action === 'activity-new') {
+    inspModal = null;
+    entryModal = { page: 'daily', sl: 0, id: '', mode: 'newActivity' };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'open-activity') {
+    inspModal = null;
+    entryModal = { page: 'daily', sl: 0, id: button.dataset.id, mode: 'viewActivity' };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'delete-activity') {
+    deleteSiteActivity(button.dataset.id);
+    return;
+  }
+  if (action === 'contract-edit-milestones') {
+    if (!isRegion() && !isAdmin()) return;
+    entryModal = { page: 'contract', mode: 'milestones' };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'contract-add-bg') {
+    if (!isRegion() && !isAdmin()) return;
+    entryModal = { page: 'contract', mode: 'bg', idx: null };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'contract-edit-bg') {
+    if (!isRegion() && !isAdmin()) return;
+    const idx = Number(button.dataset.idx);
+    entryModal = { page: 'contract', mode: 'bg', idx };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'contract-delete-bg') {
+    if (!isRegion() && !isAdmin()) return;
+    deleteContractBg(Number(button.dataset.idx));
+    return;
+  }
+  if (action === 'contract-add-eot') {
+    if (!isRegion() && !isAdmin()) return;
+    entryModal = { page: 'contract', mode: 'eot', idx: null };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'contract-edit-eot') {
+    if (!isRegion() && !isAdmin()) return;
+    const idx = Number(button.dataset.idx);
+    entryModal = { page: 'contract', mode: 'eot', idx };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'contract-delete-eot') {
+    if (!isRegion() && !isAdmin()) return;
+    deleteContractEot(Number(button.dataset.idx));
+    return;
+  }
   if (action === 'auth-mode') {
     authMode = button.dataset.mode === 'signup' ? 'signup' : 'login';
     paint();
@@ -2348,6 +3139,9 @@ function onSubmit(event) {
   if (form.id === 'form-login') signIn(form);
   if (form.id === 'form-signup') signUp(form);
   if (form.id === 'form-create-user') createUserAccount(form);
+  if (form.id === 'form-contract-milestones') saveContractMilestones(form);
+  if (form.id === 'form-contract-bg') saveContractBg(form);
+  if (form.id === 'form-contract-eot') saveContractEot(form);
   if (form.id === 'form-rectify-letter') saveRectifyLetter(form);
   if (form.id === 'form-boq') saveBoq(form);
   if (form.id === 'form-gtp-batch') {
@@ -2368,6 +3162,7 @@ function onSubmit(event) {
   if (form.id === 'form-receive') saveReceipt(form);
   if (form.id === 'form-invoice') saveInvoice(form);
   if (form.id === 'form-daily') saveDaily(form);
+  if (form.id === 'form-site-activity') saveSiteActivity(form);
   if (form.id === 'form-survey') saveSurvey(form);
   if (form.id === 'form-pay') markBillPaid(field(form, 'id'));
   if (form.id === 'form-verify') verifyLog(field(form, 'id'));
@@ -2420,6 +3215,11 @@ function rejectInvoiceQty(input) {
 }
 
 function onChange(event) {
+  if (event.target.id === 'select-activity-type') {
+    const customWrap = document.getElementById('custom-activity-wrapper');
+    if (customWrap) customWrap.hidden = event.target.value !== 'Other';
+    return;
+  }
   if (event.target.id === 'sim-role-select') {
     simulatedRole = event.target.value || null;
     if (!canOpen(currentPage)) currentPage = 'home';
@@ -2511,16 +3311,16 @@ function updateBatchCount(form) {
 }
 
 function updateDecisionCount(form) {
-  const tally = { Approved: 0, Hold: 0, Rejected: 0, Skip: 0 };
-  form.querySelectorAll('.dec-row input[type="radio"]:checked').forEach((radio) => { tally[radio.value] += 1; });
+  const tally = { Approved: 0, Rejected: 0 };
+  form.querySelectorAll('.dec-row input[type="radio"]:checked').forEach((radio) => {
+    if (tally[radio.value] !== undefined) tally[radio.value] += 1;
+  });
   const parts = [];
   if (tally.Approved) parts.push(`<span class="badge ok">${tally.Approved} approve</span>`);
-  if (tally.Hold) parts.push(`<span class="badge hold">${tally.Hold} hold</span>`);
   if (tally.Rejected) parts.push(`<span class="badge bad">${tally.Rejected} reject</span>`);
-  if (tally.Skip) parts.push(`<span class="badge idle">${tally.Skip} skipped</span>`);
   const label = form.querySelector('[data-count]');
   if (label) label.innerHTML = parts.join(' ') || 'Choose a decision for each row';
-  const decided = tally.Approved + tally.Hold + tally.Rejected;
+  const decided = tally.Approved + tally.Rejected;
   const submit = form.querySelector('[data-submit]');
   if (submit) {
     submit.disabled = decided === 0;
@@ -2529,6 +3329,7 @@ function updateDecisionCount(form) {
 }
 
 function openPage(pageId) {
+  if (pageId === 'boq') boqTab = 'overview';
   if (!canOpen(pageId)) return;
   if (pageId !== currentPage) {
     inspModal = null;
@@ -2713,7 +3514,13 @@ async function deleteApproval(slNo, kind, letterNo) {
   if (user.role !== 'Admin') return;
   const item = findItem(slNo);
   if (!item) return;
-  const label = kind === 'gtp' ? 'GTP' : 'Vendor approval';
+  const records = itemApprovals(item, kind);
+  const target = letterNo ? records.find((r) => r.letterNo === letterNo) : records[0];
+  const label = kindLabel(kind);
+  if (target?.status === 'Approved') {
+    alert(`Cannot delete this ${label} record: It has already been Approved. Rectify tagging instead of deleting.`);
+    return;
+  }
   const desc = letterNo ? `letter ${letterNo} for Sl ${slNo}` : `${label} request for Sl ${slNo}`;
   if (!confirm(`Delete ${desc}?`)) return;
   try {
@@ -2729,7 +3536,13 @@ async function deleteApproval(slNo, kind, letterNo) {
 
 async function deleteApprovalLetter(kind, letterNo) {
   if (user.role !== 'Admin') return;
-  const label = kind === 'gtp' ? 'GTP' : 'Vendor approval';
+  const group = findGroup(letterKey(kind, letterNo));
+  const hasApproved = group?.rows?.some(({ record }) => record.status === 'Approved');
+  if (hasApproved) {
+    alert(`Cannot delete letter ${letterNo}: Some or all materials covered under this letter are already approved. Use "Rectify Letter Tagging" to correct metadata instead.`);
+    return;
+  }
+  const label = kindLabel(kind);
   if (!confirm(`Delete all ${label} requests under letter ${letterNo}?`)) return;
   try {
     await remote.removeApprovalLetter(kind, letterNo);
@@ -2739,6 +3552,69 @@ async function deleteApprovalLetter(kind, letterNo) {
     paint();
   } catch (error) {
     toast(error.message || 'Could not delete');
+  }
+}
+
+async function resetApprovalDecision(slNo, kind, letterNo) {
+  if (user.role !== 'Admin') return;
+  const item = findItem(slNo);
+  if (!item) return;
+  const records = itemAllApprovals(item);
+  const target = letterNo ? records.find((r) => r.letterNo === letterNo) : records.find((r) => r.kind === kind) || records[0];
+  if (!target) return;
+  if (!confirm(`Reset decision for Sl ${slNo} (${target.letterNo || 'Material'}) back to 'Submitted' (Pending Approval)?`)) return;
+  try {
+    const updated = {
+      itemSl: item.slNo,
+      kind: target.kind,
+      status: 'Submitted',
+      vendor: target.vendor || '',
+      letterNo: target.letterNo || '',
+      subDate: target.subDate || todayISO(),
+      apprDate: '',
+      approvedQty: '',
+      actionDate: '',
+      memoNo: '',
+      remarks: '',
+      actionBy: ''
+    };
+    await remote.saveApproval(updated);
+    await pullRegister();
+    entryModal = null;
+    toast(`Sl ${slNo} decision reset to 'Submitted'`);
+    paint();
+  } catch (error) {
+    toast(error.message || 'Could not reset decision');
+  }
+}
+
+async function resetLetterDecision(kind, letterNo) {
+  if (user.role !== 'Admin') return;
+  const group = findGroup(letterKey(kind, letterNo));
+  if (!group || !group.rows.length) return;
+  if (!confirm(`Reset all decisions under letter '${letterNo}' back to 'Submitted' (Pending Approval)?`)) return;
+  try {
+    const payloads = group.rows.map(({ item, record }) => ({
+      itemSl: item.slNo,
+      kind: record.kind,
+      status: 'Submitted',
+      vendor: record.vendor || '',
+      letterNo: record.letterNo || letterNo,
+      subDate: record.subDate || todayISO(),
+      apprDate: '',
+      approvedQty: '',
+      actionDate: '',
+      memoNo: '',
+      remarks: '',
+      actionBy: ''
+    }));
+    await remote.saveApprovals(payloads);
+    await pullRegister();
+    entryModal = null;
+    toast(`Decisions for letter ${letterNo} reset to 'Submitted'`);
+    paint();
+  } catch (error) {
+    toast(error.message || 'Could not reset decisions');
   }
 }
 
@@ -2759,7 +3635,13 @@ async function saveRectifyLetter(form) {
     setMsg(form, 'Saving rectified tagging…');
     await remote.rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo, newVendor, newSubDate);
     await pullRegister();
-    entryModal = null;
+    const returnSl = entryModal?.sl;
+    if (returnSl) {
+      entryModal = { page: 'gtp', sl: returnSl, id: newKind, mode: 'note' };
+    } else {
+      const newKey = letterKey(newKind, newLetterNo);
+      entryModal = { page: 'gtp', sl: 0, id: newKey, mode: 'letter' };
+    }
     toast(`Letter ${newLetterNo} tagging rectified!`);
     paint();
   } catch (error) {
@@ -2862,18 +3744,12 @@ async function saveDecisionBatch(form) {
   const picks = [];
   for (const { item, record } of group.rows) {
     if (!GTP_WAITING.includes(record.status)) continue;
-    const decision = form.querySelector(`input[name="dec-${item.slNo}"]:checked`)?.value || 'Skip';
-    if (decision === 'Skip') continue;
-    let qty = '';
-    if (decision === 'Approved') {
-      qty = Number(field(form, `qty-${item.slNo}`));
-      if (!(qty > 0)) return setMsg(form, `Enter the approved quantity for Sl ${item.slNo}.`);
-    }
-    picks.push({ item, record, decision, qty });
+    const decision = form.querySelector(`input[name="dec-${item.slNo}"]:checked`)?.value || 'Approved';
+    picks.push({ item, record, decision, qty: item.loaQty });
   }
-  if (!picks.length) return setMsg(form, 'Choose approve, hold, or reject for at least one row.');
+  if (!picks.length) return setMsg(form, 'Choose approve or reject for at least one row.');
   if (!memoNo || !date) return setMsg(form, 'Enter the memo number and memo date.');
-  if (!remarks && picks.some(({ decision }) => decision !== 'Approved')) return setMsg(form, 'Add a remark for the rows put on hold or rejected.');
+  if (!remarks && picks.some(({ decision }) => decision === 'Rejected')) return setMsg(form, 'Add a remark for the rejected rows.');
   if (!requireName(form)) return;
   const payloads = picks.map(({ item, record, decision, qty }) => ({
     itemSl: item.slNo,
@@ -2890,7 +3766,11 @@ async function saveDecisionBatch(form) {
     actionBy: user.name || user.role
   }));
   if (!await finish(form, () => remote.saveApprovals(payloads))) return;
-  payloads.forEach(({ itemSl, kind, ...fields }) => Object.assign(approvalRecord(findItem(itemSl), kind), fields));
+  payloads.forEach(({ itemSl, kind, ...fields }) => {
+    const it = findItem(itemSl);
+    const rec = itemApprovals(it, kind).find((r) => r.letterNo === fields.letterNo) || approvalRecord(it, kind);
+    Object.assign(rec, fields);
+  });
   entryModal = null;
   toast(`${memoNo}: ${payloads.length} ${payloads.length === 1 ? 'decision' : 'decisions'} saved`);
   paint();
@@ -3093,43 +3973,47 @@ function pickDecision(button) {
 
 async function saveDecision(form) {
   if (!isRegion() && !isAdmin()) return;
-  const kind = field(form, 'kind') === 'gtp' ? 'gtp' : 'vendor';
+  const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(field(form, 'kind')) ? field(form, 'kind') : 'gtp_vendor';
   const item = findItem(field(form, 'item'));
-  const record = item ? approvalRecord(item, kind) : null;
+  if (!item) return setMsg(form, 'Select a valid item.');
+
   const decision = field(form, 'decision');
+  if (!['Approved', 'Rejected'].includes(decision)) return setMsg(form, 'Choose approve or reject.');
+
   const memoNo = field(form, 'memoNo');
   const date = field(form, 'date');
   const remarks = field(form, 'remarks');
-  if (!record || !['Submitted', 'Hold', 'Rejected'].includes(record.status)) {
-    return setMsg(form, 'Select a submitted item.');
-  }
-  if (!['Approved', 'Hold', 'Rejected'].includes(decision)) return setMsg(form, 'Choose approve, hold, or reject.');
-  if (!memoNo || !date || !remarks) return setMsg(form, 'Enter the memo number, date, and remarks.');
+  if (!memoNo || !date) return setMsg(form, 'Enter the memo number and date.');
+  if (decision === 'Rejected' && !remarks) return setMsg(form, 'Add a remark for the rejected decision.');
   if (!requireName(form)) return;
+
+  const records = itemApprovals(item, kind);
+  const record = records.find((r) => GTP_WAITING.includes(r.status)) || approvalRecord(item, kind);
+  const vendor = field(form, 'vendor') || record.vendor || approvalRecord(item, 'vendor').vendor || '';
+  const letterNo = field(form, 'letterNo') || record.letterNo || '';
+
   const payload = {
     itemSl: item.slNo,
     kind,
     status: decision,
-    vendor: record.vendor || '',
-    letterNo: record.letterNo || '',
-    subDate: record.subDate || '',
+    vendor: vendor || '',
+    letterNo: letterNo || '',
+    subDate: record.subDate || date,
     apprDate: decision === 'Approved' ? date : '',
     approvedQty: decision === 'Approved' ? item.loaQty : '',
     actionDate: date,
     memoNo,
-    remarks,
+    remarks: remarks || decisionLabel(decision),
     actionBy: user.name || user.role
   };
+
   if (!await finish(form, () => remote.saveApproval(payload))) return;
-  record.status = payload.status;
-  record.actionDate = payload.actionDate;
-  record.memoNo = payload.memoNo;
-  record.remarks = payload.remarks;
-  record.actionBy = payload.actionBy;
-  record.apprDate = payload.apprDate;
-  record.approvedQty = payload.approvedQty;
+  Object.assign(record, payload);
+  if (!gtpApprovals.includes(record)) {
+    gtpApprovals.push(record);
+  }
   entryModal = null;
-  const label = kind === 'gtp' ? 'GTP' : 'Vendor';
+  const label = kindLabel(kind);
   toast(`${label} ${decisionLabel(decision).toLowerCase()}`);
   paint();
 }
@@ -3431,6 +4315,222 @@ async function saveDaily(form) {
   paint();
 }
 
+async function saveSiteActivity(form) {
+  if (!isVendor() && !isAdmin()) return;
+  const date = field(form, 'date');
+  const activityType = field(form, 'activityType');
+  const customType = field(form, 'customType');
+  const type = activityType === 'Other' && customType ? customType : activityType;
+  const agencyRep = field(form, 'agencyRep');
+  const wbsedclRep = field(form, 'wbsedclRep');
+  const otherRep = field(form, 'otherRep');
+  const qty = field(form, 'qty');
+  const description = field(form, 'description');
+
+  if (!date || !type || !agencyRep) {
+    return setMsg(form, 'Please enter Date, Activity, and Agency Representative.');
+  }
+
+  const row = {
+    id: uid('ACT'),
+    date,
+    activityType: type,
+    agencyRep,
+    wbsedclRep,
+    otherRep,
+    qty,
+    description,
+    createdBy: user.name || effectiveRole()
+  };
+
+  try {
+    setMsg(form, 'Saving activity…');
+    await remote.saveSiteActivity(row);
+    await pullRegister();
+    entryModal = null;
+    toast('Site activity recorded');
+    paint();
+  } catch (err) {
+    setMsg(form, err.message || 'Could not save activity');
+  }
+}
+
+async function deleteSiteActivity(id) {
+  if (!isAdmin()) return;
+  const act = siteActivities.find((a) => a.id === id);
+  if (!act) return;
+  if (!confirm(`Delete activity "${act.activityType}" on ${act.date}?`)) return;
+  try {
+    await remote.removeSiteActivity(id);
+    await pullRegister();
+    entryModal = null;
+    toast('Activity deleted');
+    paint();
+  } catch (err) {
+    toast(err.message || 'Could not delete');
+  }
+}
+
+async function saveContractMilestones(form) {
+  if (!isRegion() && !isAdmin()) return;
+  const contract = { ...(contractData || defaultContract()) };
+  contract.loaNo = field(form, 'loaNo');
+  contract.loaDate = field(form, 'loaDate') || null;
+  contract.acceptanceDate = field(form, 'acceptanceDate') || null;
+  contract.acceptanceRef = field(form, 'acceptanceRef');
+  contract.scheduleSubDate = field(form, 'scheduleSubDate') || null;
+  contract.scheduleSubRef = field(form, 'scheduleSubRef');
+  contract.scheduleSubRemarks = field(form, 'scheduleSubRemarks');
+  contract.scheduleApprDate = field(form, 'scheduleApprDate') || null;
+  contract.scheduleApprRef = field(form, 'scheduleApprRef');
+  contract.scheduleApprStatus = field(form, 'scheduleApprStatus');
+  contract.scheduleApprRemarks = field(form, 'scheduleApprRemarks');
+  contract.targetCompletionDate = field(form, 'targetCompletionDate') || null;
+  contract.updatedBy = user.name || effectiveRole();
+
+  try {
+    setMsg(form, 'Saving milestones…');
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    entryModal = null;
+    toast('Contract milestones updated');
+    paint();
+  } catch (err) {
+    setMsg(form, err.message || 'Could not save milestones');
+  }
+}
+
+async function saveContractBg(form) {
+  if (!isRegion() && !isAdmin()) return;
+  const idx = Number(field(form, 'idx'));
+  const contract = { ...(contractData || defaultContract()) };
+  const list = [...(contract.bgEntries || [])];
+  const bgNo = field(form, 'bgNo');
+  const bankName = field(form, 'bankName');
+  const amount = Number(field(form, 'amount')) || 0;
+  const subDate = field(form, 'subDate');
+
+  if (!bgNo || !bankName || !subDate) {
+    return setMsg(form, 'Please enter BG Number, Bank Name, and Submission Date.');
+  }
+
+  const entry = {
+    id: idx >= 0 && list[idx]?.id ? list[idx].id : uid('BG'),
+    bgNo,
+    bankName,
+    amount,
+    subDate,
+    expiryDate: field(form, 'expiryDate') || null,
+    claimDate: field(form, 'claimDate') || null,
+    status: field(form, 'status') || 'Active',
+    remarks: field(form, 'remarks') || ''
+  };
+
+  if (idx >= 0 && idx < list.length) {
+    list[idx] = entry;
+  } else {
+    list.push(entry);
+  }
+
+  contract.bgEntries = list;
+  contract.updatedBy = user.name || effectiveRole();
+
+  try {
+    setMsg(form, 'Saving Bank Guarantee…');
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    entryModal = null;
+    toast(idx >= 0 ? 'Bank Guarantee updated' : 'Bank Guarantee added');
+    paint();
+  } catch (err) {
+    setMsg(form, err.message || 'Could not save BG');
+  }
+}
+
+async function deleteContractBg(idx) {
+  if (!isRegion() && !isAdmin()) return;
+  const contract = { ...(contractData || defaultContract()) };
+  const list = [...(contract.bgEntries || [])];
+  const bg = list[idx];
+  if (!bg) return;
+  if (!confirm(`Delete Bank Guarantee "${bg.bgNo}"?`)) return;
+  list.splice(idx, 1);
+  contract.bgEntries = list;
+  contract.updatedBy = user.name || effectiveRole();
+  try {
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    toast('Bank Guarantee deleted');
+    paint();
+  } catch (err) {
+    toast(err.message || 'Could not delete BG');
+  }
+}
+
+async function saveContractEot(form) {
+  if (!isRegion() && !isAdmin()) return;
+  const idx = Number(field(form, 'idx'));
+  const contract = { ...(contractData || defaultContract()) };
+  const list = [...(contract.eotEntries || [])];
+  const revisedDate = field(form, 'revisedDate');
+  const memoNo = field(form, 'memoNo');
+
+  if (!revisedDate || !memoNo) {
+    return setMsg(form, 'Please enter Revised Target Date and Approval Memo No.');
+  }
+
+  const entry = {
+    id: idx >= 0 && list[idx]?.id ? list[idx].id : uid('EOT'),
+    revisedDate,
+    extensionDays: Number(field(form, 'extensionDays')) || 0,
+    memoNo,
+    approvalDate: field(form, 'approvalDate') || null,
+    approvedBy: field(form, 'approvedBy') || 'WBSEDCL',
+    status: field(form, 'status') || 'Approved',
+    reason: field(form, 'reason') || ''
+  };
+
+  if (idx >= 0 && idx < list.length) {
+    list[idx] = entry;
+  } else {
+    list.push(entry);
+  }
+
+  contract.eotEntries = list;
+  contract.updatedBy = user.name || effectiveRole();
+
+  try {
+    setMsg(form, 'Saving Time Extension…');
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    entryModal = null;
+    toast(idx >= 0 ? 'EOT revision updated' : 'EOT revision added');
+    paint();
+  } catch (err) {
+    setMsg(form, err.message || 'Could not save EOT');
+  }
+}
+
+async function deleteContractEot(idx) {
+  if (!isRegion() && !isAdmin()) return;
+  const contract = { ...(contractData || defaultContract()) };
+  const list = [...(contract.eotEntries || [])];
+  const eot = list[idx];
+  if (!eot) return;
+  if (!confirm(`Delete Time Extension revision (Rev-${idx + 1})?`)) return;
+  list.splice(idx, 1);
+  contract.eotEntries = list;
+  contract.updatedBy = user.name || effectiveRole();
+  try {
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    toast('EOT revision deleted');
+    paint();
+  } catch (err) {
+    toast(err.message || 'Could not delete EOT');
+  }
+}
+
 async function verifyLog(id) {
   if (!isRegion() && !isAdmin()) return;
   const log = dailyLogs.find((row) => row.id === id);
@@ -3532,7 +4632,7 @@ function approvalRecord(item, kind) {
 
 function submitAction(item, kind, record, label) {
   if (!isVendor() && !isAdmin()) return '';
-  return `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}">${esc(label)}</button>`;
+  return `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}" data-mode="submit">${esc(label)}</button>`;
 }
 
 function findItem(slNo) {
@@ -3558,9 +4658,7 @@ function officeName(className) {
 
 function approvedBoqQty(item) {
   if (!item) return 0;
-  const vendorApprs = itemApprovals(item, 'vendor').filter((r) => r.status === 'Approved');
-  const gtpDocs = itemApprovals(item, 'gtp').filter((r) => r.status === 'Approved');
-  if (!vendorApprs.length && !gtpDocs.length) return 0;
+  const comboApprs = itemApprovals(item, 'gtp_vendor').filter((r) => r.status === 'Approved');
   const getQty = (list) => {
     if (!list.length) return 0;
     const nums = list.map((r) => {
@@ -3569,6 +4667,13 @@ function approvedBoqQty(item) {
     });
     return Math.max(...nums);
   };
+  if (comboApprs.length) {
+    const cQty = getQty(comboApprs);
+    return cQty > 0 ? cQty : Number(item.loaQty) || 0;
+  }
+  const vendorApprs = itemApprovals(item, 'vendor').filter((r) => r.status === 'Approved');
+  const gtpDocs = itemApprovals(item, 'gtp').filter((r) => r.status === 'Approved');
+  if (!vendorApprs.length && !gtpDocs.length) return 0;
   const vQty = getQty(vendorApprs);
   const gQty = getQty(gtpDocs);
   if (vQty > 0 && gQty > 0) return Math.min(vQty, gQty);
@@ -3710,7 +4815,8 @@ function billLeft(item) {
 }
 
 function canOpen(pageId) {
-  return (ROLE_PAGES[user.role] || ROLE_PAGES.Turnkey).includes(pageId);
+  if (pageId === 'boq' && boqTab === 'overview') return true;
+  return (ROLE_PAGES[effectiveRole()] || ROLE_PAGES.Turnkey).includes(pageId);
 }
 
 function head(title, hint) {
@@ -3725,9 +4831,9 @@ function head(title, hint) {
   `;
 }
 
-function kpi(label, value, sub) {
+function kpi(label, value, sub, action = '') {
   return `
-    <article class="kpi">
+    <article class="kpi"${action ? ` data-action="${esc(action)}" style="cursor:pointer;" title="Click to view details"` : ''}>
       <span class="kpi-label">${esc(label)}</span>
       <strong class="kpi-value">${esc(value)}</strong>
       <span class="kpi-sub">${esc(sub)}</span>
@@ -3968,13 +5074,30 @@ function isoToDmy(iso) {
 }
 
 function formatDisplayDate(dmy) {
-  const [day, month, year] = String(dmy).split('-').map(Number);
-  if (!year) return dmy;
-  return new Date(year, month - 1, day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!dmy) return '—';
+  const parts = String(dmy).split('-').map(Number);
+  if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return dmy;
+  let year, month, day;
+  if (parts[0] > 1000) {
+    year = parts[0]; month = parts[1]; day = parts[2];
+  } else {
+    day = parts[0]; month = parts[1]; year = parts[2];
+  }
+  const d = new Date(year, month - 1, day);
+  if (isNaN(d.getTime())) return dmy;
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function daysUntil(dmy) {
-  const [day, month, year] = dmy.split('-').map(Number);
+  if (!dmy) return 0;
+  const parts = String(dmy).split('-').map(Number);
+  if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return 0;
+  let year, month, day;
+  if (parts[0] > 1000) {
+    year = parts[0]; month = parts[1]; day = parts[2];
+  } else {
+    day = parts[0]; month = parts[1]; year = parts[2];
+  }
   const end = new Date(year, month - 1, day);
   const start = new Date();
   start.setHours(0, 0, 0, 0);

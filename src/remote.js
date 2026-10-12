@@ -10,7 +10,7 @@ if (!url || !anonKey) {
 export const supabase = createClient(url, anonKey);
 
 const CACHE_KEY = 'malda_ug_register_v1';
-const DATA_TABLES = ['items', 'approvals', 'offers', 'di', 'receipts', 'invoices', 'invoice_lines', 'logs'];
+const DATA_TABLES = ['items', 'approvals', 'offers', 'di', 'receipts', 'invoices', 'invoice_lines', 'logs', 'site_activities', 'project_contract'];
 
 let channel = null;
 
@@ -216,7 +216,13 @@ export async function loadRegister(includePeople) {
   if (needed.length) {
     const results = await Promise.all(needed.map((table) => supabase.from(table).select('*')));
     results.forEach((result, index) => {
-      if (result.error) throw wrap(result.error);
+      if (result.error) {
+        if ((needed[index] === 'site_activities' || needed[index] === 'project_contract') && (result.error.code === '42P01' || result.error.code === 'PGRST205' || /could not find the table/i.test(result.error.message || ''))) {
+          rows[needed[index]] = [];
+          return;
+        }
+        throw wrap(result.error);
+      }
       rows[needed[index]] = result.data || [];
     });
   }
@@ -247,7 +253,7 @@ function mapRegister(rows, people) {
   const itemBySl = new Map(items.map((item) => [item.sl_no, item]));
   const offerById = new Map(offers.map((offer) => [offer.id, offer]));
   const vendorMap = new Map();
-  approvals.filter((row) => row.kind === 'vendor' && row.vendor).forEach((row) => {
+  approvals.filter((row) => (row.kind === 'vendor' || row.kind === 'gtp_vendor') && row.vendor).forEach((row) => {
     const list = vendorMap.get(row.item_sl) || [];
     if (!list.includes(row.vendor)) list.push(row.vendor);
     vendorMap.set(row.item_sl, list);
@@ -261,6 +267,8 @@ function mapRegister(rows, people) {
     receipts: receipts.map((row) => toReceipt(row, itemBySl)).sort(newestFirst),
     invoices: mapInvoices(rows.invoices || [], rows.invoice_lines || [], itemBySl),
     logs: logs.map((row) => toLog(row, itemBySl)).sort(newestFirst),
+    activities: (rows.site_activities || []).map(toActivity).sort(newestFirst),
+    contract: toContract(rows.project_contract?.[0]),
     people
   };
 }
@@ -354,16 +362,38 @@ export async function rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo
 
   if (!error) return;
 
-  let query = supabase.from('approvals').update({
-    kind: newKind,
-    letter_no: newLetterNo,
-    vendor: newVendor,
-    ...(newSubDate ? { sub_date: newSubDate } : {})
-  }).eq('kind', oldKind).eq('letter_no', oldLetterNo);
-  if (itemSl) query = query.eq('item_sl', itemSl);
+  // Fallback if RPC is not present or restricted
+  let selectQuery = supabase.from('approvals').select('*').eq('kind', oldKind).eq('letter_no', oldLetterNo);
+  if (itemSl) selectQuery = selectQuery.eq('item_sl', itemSl);
+  const { data: rows, error: selErr } = await selectQuery;
+  if (selErr) throw wrap(selErr);
+  if (!rows || rows.length === 0) return;
 
-  const { error: fallErr } = await query;
-  if (fallErr) throw wrap(fallErr);
+  if (oldKind !== newKind) {
+    let delQuery = supabase.from('approvals').delete().eq('kind', oldKind).eq('letter_no', oldLetterNo);
+    if (itemSl) delQuery = delQuery.eq('item_sl', itemSl);
+    const { error: delErr } = await delQuery;
+    if (delErr) throw wrap(delErr);
+
+    const newRows = rows.map((r) => ({
+      ...r,
+      kind: newKind,
+      letter_no: newLetterNo.trim(),
+      vendor: newVendor.trim(),
+      sub_date: newSubDate || r.sub_date
+    }));
+    const { error: insErr } = await supabase.from('approvals').insert(newRows);
+    if (insErr) throw wrap(insErr);
+  } else {
+    let updQuery = supabase.from('approvals').update({
+      letter_no: newLetterNo.trim(),
+      vendor: newVendor.trim(),
+      ...(newSubDate ? { sub_date: newSubDate } : {})
+    }).eq('kind', oldKind).eq('letter_no', oldLetterNo);
+    if (itemSl) updQuery = updQuery.eq('item_sl', itemSl);
+    const { error: updErr } = await updQuery;
+    if (updErr) throw wrap(updErr);
+  }
 }
 
 export async function removeInvoice(id) {
@@ -372,13 +402,94 @@ export async function removeInvoice(id) {
 }
 
 export async function saveApproval(record) {
-  const { error } = await supabase.from('approvals').upsert(toApprovalRow(record), { onConflict: 'item_sl,kind,letter_no' });
+  const row = toApprovalRow(record);
+  if (row.status === 'Approved' || row.status === 'Rejected') {
+    // A decision on an approval MUST use .update() so PostgreSQL receives TG_OP = 'UPDATE'.
+    // Calling .upsert() performs INSERT ... ON CONFLICT, which fires BEFORE INSERT trigger
+    // with TG_OP = 'INSERT' and triggers the PostgreSQL exception 'Select a submitted item'.
+    let updateQuery = supabase
+      .from('approvals')
+      .update(row)
+      .eq('item_sl', row.item_sl)
+      .eq('kind', row.kind);
+
+    if (row.letter_no) {
+      updateQuery = updateQuery.eq('letter_no', row.letter_no);
+    }
+
+    const { data, error } = await updateQuery.select();
+    if (error) throw wrap(error);
+
+    // If an existing row was found and updated, we are done!
+    if (data && data.length > 0) return;
+
+    // If no row existed yet (e.g. direct approval of an unsubmitted item):
+    // Insert with status 'Submitted' first to satisfy the trigger, then update to decision.
+    const letterRef = row.letter_no || (row.memo_no ? `MEMO-${row.memo_no}` : `APPR-SL${row.item_sl}`);
+    const vendorName = row.vendor || 'Approved Manufacturer';
+    const subDate = row.sub_date || row.action_date || new Date().toISOString().slice(0, 10);
+
+    const subRow = {
+      item_sl: row.item_sl,
+      kind: row.kind,
+      status: 'Submitted',
+      vendor: vendorName,
+      letter_no: letterRef,
+      sub_date: subDate,
+      approved_qty: null,
+      appr_date: null,
+      action_date: null,
+      memo_no: '',
+      remarks: '',
+      action_by: ''
+    };
+
+    const { error: insErr } = await supabase.from('approvals').insert(subRow);
+    if (insErr) throw wrap(insErr);
+
+    const updateData = {
+      ...row,
+      vendor: vendorName,
+      letter_no: letterRef,
+      sub_date: subDate
+    };
+
+    const { error: updErr } = await supabase
+      .from('approvals')
+      .update(updateData)
+      .eq('item_sl', updateData.item_sl)
+      .eq('kind', updateData.kind)
+      .eq('letter_no', updateData.letter_no);
+    if (updErr) throw wrap(updErr);
+    return;
+  }
+
+  if (row.status === 'Submitted') {
+    let updateQuery = supabase
+      .from('approvals')
+      .update(row)
+      .eq('item_sl', row.item_sl)
+      .eq('kind', row.kind);
+    if (row.letter_no) updateQuery = updateQuery.eq('letter_no', row.letter_no);
+    const { data, error: updErr } = await updateQuery.select();
+    if (!updErr && data && data.length > 0) return;
+  }
+
+  // New submission by vendor/turnkey agency
+  const { error } = await supabase.from('approvals').upsert(row, { onConflict: 'item_sl,kind,letter_no' });
   if (error) throw wrap(error);
 }
 
 // Many items under one letter / memo reference are saved in a single round trip.
 export async function saveApprovals(records) {
   if (!records.length) return;
+  const isDecision = records.some((r) => r.status === 'Approved' || r.status === 'Rejected');
+  if (isDecision) {
+    for (const record of records) {
+      await saveApproval(record);
+    }
+    return;
+  }
   const { error } = await supabase.from('approvals').upsert(records.map(toApprovalRow), { onConflict: 'item_sl,kind,letter_no' });
   if (error) throw wrap(error);
 }
@@ -490,6 +601,52 @@ export async function verifyLog(id, inspector) {
     approval_status: 'Approved',
     inspector
   }).eq('id', id);
+  if (error) throw wrap(error);
+}
+
+export async function saveSiteActivity(activity) {
+  const row = {
+    id: activity.id,
+    activity_date: activity.date,
+    activity_type: activity.activityType,
+    agency_rep: activity.agencyRep || '',
+    wbsedcl_rep: activity.wbsedclRep || '',
+    other_rep: activity.otherRep || '',
+    qty: activity.qty || '',
+    description: activity.description || '',
+    created_by: activity.createdBy || ''
+  };
+  const { error } = await supabase.from('site_activities').upsert(row);
+  if (error) throw wrap(error);
+}
+
+export async function removeSiteActivity(id) {
+  const { error } = await supabase.from('site_activities').delete().eq('id', id);
+  if (error) throw wrap(error);
+}
+
+export async function saveContractOverview(contract) {
+  const row = {
+    id: contract.id || 'MALDA-UG-MAIN',
+    loa_no: contract.loaNo || 'WBSEDCL/RE/Malda/UG/2023-24/01',
+    loa_date: contract.loaDate || null,
+    acceptance_date: contract.acceptanceDate || null,
+    acceptance_ref: contract.acceptanceRef || '',
+    schedule_sub_date: contract.scheduleSubDate || null,
+    schedule_sub_ref: contract.scheduleSubRef || '',
+    schedule_sub_remarks: contract.scheduleSubRemarks || '',
+    schedule_appr_date: contract.scheduleApprDate || null,
+    schedule_appr_ref: contract.scheduleApprRef || '',
+    schedule_appr_status: contract.scheduleApprStatus || 'Pending',
+    schedule_appr_remarks: contract.scheduleApprRemarks || '',
+    target_completion_date: contract.targetCompletionDate || '2025-07-15',
+    bg_entries: contract.bgEntries || [],
+    eot_entries: contract.eotEntries || [],
+    remarks: contract.remarks || '',
+    updated_by: contract.updatedBy || '',
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('project_contract').upsert(row, { onConflict: 'id' });
   if (error) throw wrap(error);
 }
 
@@ -706,6 +863,66 @@ function toLog(row, itemBySl) {
     approvalStatus: row.approval_status,
     inspector: row.inspector || '',
     createdAt: row.created_at
+  };
+}
+
+function toActivity(row) {
+  return {
+    id: row.id,
+    date: row.activity_date,
+    activityType: row.activity_type,
+    agencyRep: row.agency_rep || '',
+    wbsedclRep: row.wbsedcl_rep || '',
+    otherRep: row.other_rep || '',
+    qty: row.qty || '',
+    description: row.description || '',
+    createdBy: row.created_by || '',
+    createdAt: row.created_at
+  };
+}
+
+function toContract(row) {
+  if (!row) {
+    return {
+      id: 'MALDA-UG-MAIN',
+      loaNo: 'WBSEDCL/RE/Malda/UG/2023-24/01',
+      loaDate: '2024-01-16',
+      acceptanceDate: '',
+      acceptanceRef: '',
+      scheduleSubDate: '',
+      scheduleSubRef: '',
+      scheduleSubRemarks: '',
+      scheduleApprDate: '',
+      scheduleApprRef: '',
+      scheduleApprStatus: 'Pending',
+      scheduleApprRemarks: '',
+      targetCompletionDate: '2025-07-15',
+      bgEntries: [],
+      eotEntries: [],
+      remarks: '',
+      updatedBy: '',
+      updatedAt: ''
+    };
+  }
+  return {
+    id: row.id || 'MALDA-UG-MAIN',
+    loaNo: row.loa_no || 'WBSEDCL/RE/Malda/UG/2023-24/01',
+    loaDate: row.loa_date || '2024-01-16',
+    acceptanceDate: row.acceptance_date || '',
+    acceptanceRef: row.acceptance_ref || '',
+    scheduleSubDate: row.schedule_sub_date || '',
+    scheduleSubRef: row.schedule_sub_ref || '',
+    scheduleSubRemarks: row.schedule_sub_remarks || '',
+    scheduleApprDate: row.schedule_appr_date || '',
+    scheduleApprRef: row.schedule_appr_ref || '',
+    scheduleApprStatus: row.schedule_appr_status || 'Pending',
+    scheduleApprRemarks: row.schedule_appr_remarks || '',
+    targetCompletionDate: row.target_completion_date || '2025-07-15',
+    bgEntries: Array.isArray(row.bg_entries) ? row.bg_entries : [],
+    eotEntries: Array.isArray(row.eot_entries) ? row.eot_entries : [],
+    remarks: row.remarks || '',
+    updatedBy: row.updated_by || '',
+    updatedAt: row.updated_at || ''
   };
 }
 
