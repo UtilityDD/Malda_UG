@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000 --host",
-    "build": "vite build && node -e \"import fs from 'fs'; ['sw.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'].forEach(f => fs.copyFileSync(f, 'dist/' + f));\"",
+    "build": "vite build && node -e \"import fs from 'fs'; ['sw.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'].forEach(f => { fs.copyFileSync('public/' + f, 'dist/' + f); try { fs.copyFileSync('public/' + f, 'dist/assets/' + f); } catch {} });\"",
     "preview": "vite preview"
   },
   "dependencies": {

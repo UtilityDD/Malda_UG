@@ -1,4 +1,4 @@
-const CACHE_NAME = 'malda-ug-pwa-v8';
+const CACHE_NAME = 'malda-ug-pwa-v9';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
