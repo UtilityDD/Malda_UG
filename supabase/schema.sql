@@ -16,7 +16,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   name text not null default '',
   email text not null default '',
-  role text not null default 'Vendor' check (role in ('Vendor', 'Region', 'Turnkey', 'WBSEDCL', 'Store', 'Viewer', 'Admin')),
+  role text not null default 'Vendor' check (role in ('Vendor', 'Region', 'Turnkey', 'WBSEDCL', 'Store', 'Viewer', 'Admin', 'Division')),
   region_id text not null default 'REG-MALDA',
   vendor_id text not null default 'VEND-512589',
   active boolean not null default false
@@ -30,6 +30,10 @@ ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS vendor_id TEXT DEFAULT 'VEND-512589',
   ADD COLUMN IF NOT EXISTS sub_role TEXT DEFAULT 'Engineer',
   ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
+
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check 
+  CHECK (role in ('Vendor', 'Region', 'Turnkey', 'WBSEDCL', 'Store', 'Viewer', 'Admin', 'Division'));
 
 create table if not exists public.items (
   sl_no integer primary key,
@@ -182,10 +186,14 @@ create table if not exists public.project_contract (
   target_completion_date date default '2025-07-15',
   bg_entries jsonb not null default '[]'::jsonb,
   eot_entries jsonb not null default '[]'::jsonb,
+  feeder_surveys jsonb not null default '[]'::jsonb,
   remarks text not null default '',
   updated_by text not null default '',
   updated_at timestamptz not null default now()
 );
+
+-- Ensure feeder_surveys column exists for existing deployments
+alter table public.project_contract add column if not exists feeder_surveys jsonb not null default '[]'::jsonb;
 
 insert into public.project_contract (id, loa_no, loa_date, target_completion_date)
 values ('MALDA-UG-MAIN', 'WBSEDCL/RE/Malda/UG/2023-24/01', '2024-01-16', '2025-07-15')
@@ -200,7 +208,7 @@ set search_path = public
 as $$
   select case
     when p.role = 'Turnkey' then 'Vendor'
-    when p.role = 'WBSEDCL' then 'Region'
+    when p.role in ('WBSEDCL', 'Division') then 'Region'
     else p.role
   end
   from public.profiles p

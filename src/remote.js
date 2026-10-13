@@ -159,21 +159,29 @@ export async function createAdminUser(name, userIdInput, pinInput, role, active 
     throw new Error('User creation failed. No User ID returned.');
   }
 
-  const { error: profileErr } = await supabase.from('profiles').upsert({
+  const profileData = {
     id: newUserId,
     name: name.trim(),
     email: email.toLowerCase(),
     role: role,
     active: active,
     region_id: 'REG-MALDA',
-    vendor_id: (role === 'Vendor' || role === 'Turnkey') ? 'VEND-512589' : 'VEND-NONE'
-  }, { onConflict: 'id' });
+    vendor_id: (role === 'Vendor' || role === 'Turnkey') ? 'VEND-512589' : 'VEND-NONE',
+    permissions: permissions && typeof permissions === 'object' ? permissions : {}
+  };
+
+  let { error: profileErr } = await supabase.from('profiles').upsert(profileData, { onConflict: 'id' });
+  if (profileErr && (profileErr.code === '42703' || /permissions/i.test(profileErr.message || ''))) {
+    delete profileData.permissions;
+    const retry = await supabase.from('profiles').upsert(profileData, { onConflict: 'id' });
+    profileErr = retry.error;
+  }
 
   if (profileErr) {
     throw new Error(profileErr.message || 'Account created in Auth, but profile failed to save.');
   }
 
-  return { id: newUserId, name: name.trim(), email: email.toLowerCase(), role, active };
+  return { id: newUserId, name: name.trim(), email: email.toLowerCase(), role, active, permissions: profileData.permissions || {} };
 }
 
 export async function adminSetUserPin(userId, pinInput) {
@@ -194,11 +202,23 @@ export async function signOut() {
 export async function profile() {
   const { data: auth } = await supabase.auth.getUser();
   const id = auth.user?.id;
-  if (!id) return { name: '', role: '', active: false, email: '' };
-  const { data, error } = await supabase.from('profiles').select('id,name,email,role,active').eq('id', id).maybeSingle();
-  if (error) throw wrap(error);
-  if (!data) return { name: '', role: '', active: false, email: auth.user.email || '' };
+  if (!id) return { name: '', role: '', active: false, email: '', permissions: {} };
+  let data = null;
+  const { data: pData, error } = await supabase.from('profiles').select('id,name,email,role,active,permissions').eq('id', id).maybeSingle();
+  if (error) {
+    if (error.code === '42703' || /permissions/i.test(error.message || '')) {
+      const { data: fallbackData, error: fbErr } = await supabase.from('profiles').select('id,name,email,role,active').eq('id', id).maybeSingle();
+      if (fbErr) throw wrap(fbErr);
+      data = fallbackData;
+    } else {
+      throw wrap(error);
+    }
+  } else {
+    data = pData;
+  }
+  if (!data) return { name: '', role: '', active: false, email: auth.user.email || '', permissions: {} };
   data.role = String(data.role || '').trim();
+  data.permissions = data.permissions && typeof data.permissions === 'object' ? data.permissions : {};
   return data;
 }
 
@@ -229,9 +249,15 @@ export async function loadRegister(includePeople) {
   let people = cache.people || [];
   const peopleStale = includePeople && (!versions || cache.versions?.profiles !== versions.profiles || !Array.isArray(cache.people));
   if (peopleStale) {
-    const peopleResult = await supabase.from('profiles').select('id,name,email,role,active').order('name');
+    let peopleResult = await supabase.from('profiles').select('id,name,email,role,active,permissions').order('name');
+    if (peopleResult.error && (peopleResult.error.code === '42703' || /permissions/i.test(peopleResult.error.message || ''))) {
+      peopleResult = await supabase.from('profiles').select('id,name,email,role,active').order('name');
+    }
     if (peopleResult.error) throw wrap(peopleResult.error);
-    people = peopleResult.data || [];
+    people = (peopleResult.data || []).map((p) => ({
+      ...p,
+      permissions: p.permissions && typeof p.permissions === 'object' ? p.permissions : {}
+    }));
   }
   if (needed.length || peopleStale || !readCache()) {
     writeCache({
@@ -642,17 +668,46 @@ export async function saveContractOverview(contract) {
     target_completion_date: contract.targetCompletionDate || '2025-07-15',
     bg_entries: contract.bgEntries || [],
     eot_entries: contract.eotEntries || [],
+    feeder_surveys: contract.feederSurveys || [],
     remarks: contract.remarks || '',
     updated_by: contract.updatedBy || '',
     updated_at: new Date().toISOString()
   };
-  const { error } = await supabase.from('project_contract').upsert(row, { onConflict: 'id' });
-  if (error) throw wrap(error);
+  try {
+    const { error } = await supabase.from('project_contract').upsert(row, { onConflict: 'id' });
+    if (error) {
+      if (error.code === '42703' || /feeder_surveys/i.test(error.message || '')) {
+        // Fallback: feeder_surveys column not created in Postgres yet; encode inside remarks
+        const fallbackRow = { ...row };
+        delete fallbackRow.feeder_surveys;
+        const remarksPayload = {
+          userRemarks: contract.remarks || '',
+          feederSurveys: contract.feederSurveys || []
+        };
+        fallbackRow.remarks = JSON.stringify(remarksPayload);
+        const { error: fallbackError } = await supabase.from('project_contract').upsert(fallbackRow, { onConflict: 'id' });
+        if (fallbackError) throw wrap(fallbackError);
+        return;
+      }
+      throw wrap(error);
+    }
+  } catch (err) {
+    throw wrap(err);
+  }
 }
 
 export async function saveProfile(id, fields) {
   const { error } = await supabase.from('profiles').update(fields).eq('id', id);
-  if (error) throw wrap(error);
+  if (error) {
+    if ((error.code === '42703' || /permissions/i.test(error.message || '')) && fields.permissions) {
+      const fallbackFields = { ...fields };
+      delete fallbackFields.permissions;
+      const { error: fallbackErr } = await supabase.from('profiles').update(fallbackFields).eq('id', id);
+      if (fallbackErr) throw wrap(fallbackErr);
+      throw new Error('User updated, but permissions column is not created in Supabase yet. Run supabase/custom_authorization_migration.sql in SQL Editor.');
+    }
+    throw wrap(error);
+  }
 }
 
 export async function seedItems(items) {
@@ -899,6 +954,7 @@ function toContract(row) {
       targetCompletionDate: '2025-07-15',
       bgEntries: [],
       eotEntries: [],
+      feederSurveys: defaultFeederSurveys(),
       remarks: '',
       updatedBy: '',
       updatedAt: ''
@@ -920,10 +976,37 @@ function toContract(row) {
     targetCompletionDate: row.target_completion_date || '2025-07-15',
     bgEntries: Array.isArray(row.bg_entries) ? row.bg_entries : [],
     eotEntries: Array.isArray(row.eot_entries) ? row.eot_entries : [],
-    remarks: row.remarks || '',
+    feederSurveys: Array.isArray(row.feeder_surveys)
+      ? row.feeder_surveys.filter((s) => !s.id || !s.id.startsWith('FS-0'))
+      : parseFeederSurveys(row.remarks),
+    remarks: unwrapRemarks(row.remarks),
     updatedBy: row.updated_by || '',
     updatedAt: row.updated_at || ''
   };
+}
+
+function parseFeederSurveys(remarks) {
+  if (!remarks) return [];
+  try {
+    const parsed = JSON.parse(remarks);
+    if (parsed && Array.isArray(parsed.feederSurveys)) {
+      return parsed.feederSurveys.filter((s) => !s.id || !s.id.startsWith('FS-0'));
+    }
+  } catch {}
+  return [];
+}
+
+function unwrapRemarks(remarks) {
+  if (!remarks) return '';
+  try {
+    const parsed = JSON.parse(remarks);
+    if (parsed && typeof parsed.userRemarks === 'string') return parsed.userRemarks;
+  } catch {}
+  return remarks;
+}
+
+export function defaultFeederSurveys() {
+  return [];
 }
 
 function newestFirst(a, b) {

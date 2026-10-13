@@ -17,12 +17,97 @@ const ROLE_PAGES = {
   Turnkey: ['home', 'gtp', 'di', 'billing', 'daily'],
   Region: ['home', 'boq', 'gtp', 'di', 'billing', 'daily'],
   WBSEDCL: ['home', 'boq', 'gtp', 'di', 'billing', 'daily'],
+  Division: ['home', 'boq', 'gtp', 'di', 'billing', 'daily'],
+  Divisional: ['home', 'boq', 'gtp', 'di', 'billing', 'daily'],
   Store: ['home', 'receive'],
   Viewer: ['home', 'boq', 'gtp', 'di', 'receive', 'billing', 'daily'],
   Admin: ['home', 'boq', 'gtp', 'di', 'receive', 'billing', 'daily', 'users']
 };
 
+export const PERMISSION_DEFS = [
+  { key: 'survey_entry', label: 'Feeder Survey Entry', desc: 'Add, edit & delete feeder survey measurements', icon: '🗺️' },
+  { key: 'boq_edit', label: 'Contract & Milestones', desc: 'Edit LOA baseline, BGs, milestones & EOTs', icon: '📋' },
+  { key: 'gtp_submit', label: 'GTP Submission', desc: 'Upload & submit vendor GTP documents', icon: '📑' },
+  { key: 'gtp_approve', label: 'GTP Approval', desc: 'Review, approve, or reject vendor GTP submissions', icon: '✅' },
+  { key: 'di_offer', label: 'Inspection Offer', desc: 'Submit material inspection call / offers', icon: '🔍' },
+  { key: 'di_issue', label: 'DI Issuance', desc: 'Approve inspection and issue Dispatch Instruction', icon: '🚚' },
+  { key: 'receive_record', label: 'Material Receive (Store)', desc: 'Record store receipts and stock entries', icon: '📦' },
+  { key: 'billing_submit', label: 'Vendor Billing', desc: 'Submit supply and erection invoices', icon: '💰' },
+  { key: 'billing_pay', label: 'Payment Processing', desc: 'Verify invoices and record payments', icon: '💳' },
+  { key: 'daily_log', label: 'Daily Progress (DPR)', desc: 'Log daily cable laying and site progress', icon: '🚜' },
+  { key: 'daily_verify', label: 'DPR Verification', desc: 'Verify and certify daily site progress', icon: '✔️' },
+  { key: 'users_manage', label: 'User Admin', desc: 'Manage user logins and custom authorizations', icon: '👥' }
+];
+
+export const ROLE_DEFAULT_PERMISSIONS = {
+  Admin: {
+    survey_entry: true, boq_edit: true, gtp_submit: true, gtp_approve: true,
+    di_offer: true, di_issue: true, receive_record: true, billing_submit: true,
+    billing_pay: true, daily_log: true, daily_verify: true, users_manage: true
+  },
+  Division: {
+    survey_entry: true, boq_edit: false, gtp_submit: false, gtp_approve: true,
+    di_offer: false, di_issue: true, receive_record: false, billing_submit: false,
+    billing_pay: false, daily_log: true, daily_verify: true, users_manage: false
+  },
+  Divisional: {
+    survey_entry: true, boq_edit: false, gtp_submit: false, gtp_approve: true,
+    di_offer: false, di_issue: true, receive_record: false, billing_submit: false,
+    billing_pay: false, daily_log: true, daily_verify: true, users_manage: false
+  },
+  Region: {
+    survey_entry: true, boq_edit: true, gtp_submit: false, gtp_approve: true,
+    di_offer: false, di_issue: true, receive_record: false, billing_submit: false,
+    billing_pay: true, daily_log: false, daily_verify: true, users_manage: false
+  },
+  WBSEDCL: {
+    survey_entry: true, boq_edit: true, gtp_submit: false, gtp_approve: true,
+    di_offer: false, di_issue: true, receive_record: false, billing_submit: false,
+    billing_pay: true, daily_log: false, daily_verify: true, users_manage: false
+  },
+  Vendor: {
+    survey_entry: false, boq_edit: false, gtp_submit: true, gtp_approve: false,
+    di_offer: true, di_issue: false, receive_record: false, billing_submit: true,
+    billing_pay: false, daily_log: true, daily_verify: false, users_manage: false
+  },
+  Turnkey: {
+    survey_entry: false, boq_edit: false, gtp_submit: true, gtp_approve: false,
+    di_offer: true, di_issue: false, receive_record: false, billing_submit: true,
+    billing_pay: false, daily_log: true, daily_verify: false, users_manage: false
+  },
+  Store: {
+    survey_entry: false, boq_edit: false, gtp_submit: false, gtp_approve: false,
+    di_offer: false, di_issue: false, receive_record: true, billing_submit: false,
+    billing_pay: false, daily_log: false, daily_verify: false, users_manage: false
+  },
+  Viewer: {
+    survey_entry: false, boq_edit: false, gtp_submit: false, gtp_approve: false,
+    di_offer: false, di_issue: false, receive_record: false, billing_submit: false,
+    billing_pay: false, daily_log: false, daily_verify: false, users_manage: false
+  }
+};
+
 let simulatedRole = null;
+
+function getUserPermissions(targetUser) {
+  if (!targetUser) return {};
+  if (targetUser.permissions && typeof targetUser.permissions === 'object' && Object.keys(targetUser.permissions).length > 0) {
+    return targetUser.permissions;
+  }
+  const role = targetUser.role || 'Viewer';
+  return ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+}
+
+function can(permKey) {
+  if (!user || !user.active) return false;
+  if (sessionUser && user.role === 'Admin' && simulatedRole) {
+    const simDefaults = ROLE_DEFAULT_PERMISSIONS[simulatedRole] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+    return Boolean(simDefaults[permKey]);
+  }
+  if (user.role === 'Admin') return true;
+  const perms = getUserPermissions(user);
+  return Boolean(perms[permKey]);
+}
 
 function effectiveRole() {
   if (sessionUser && user.role === 'Admin' && simulatedRole) return simulatedRole;
@@ -33,21 +118,23 @@ function roleKey() {
   return String(effectiveRole()).trim().toLowerCase();
 }
 function isAdmin() {
-  return roleKey() === 'admin';
+  if (sessionUser && user.role === 'Admin' && simulatedRole) return simulatedRole === 'Admin';
+  return user.role === 'Admin' || can('users_manage');
 }
 function isRegion() {
-  const role = roleKey();
-  return role === 'region' || role === 'wbsedcl';
+  return can('boq_edit') || can('gtp_approve') || can('billing_pay') || isAdmin();
+}
+function isDivision() {
+  return can('survey_entry') || isRegion() || isAdmin();
 }
 function isVendor() {
-  const role = roleKey();
-  return role === 'vendor' || role === 'turnkey';
+  return can('gtp_submit') || can('di_offer') || can('billing_submit') || can('daily_log');
 }
 function isStore() {
-  return roleKey() === 'store';
+  return can('receive_record');
 }
 function isViewer() {
-  return roleKey() === 'viewer';
+  return !isAdmin() && !isDivision() && !isVendor() && !isStore();
 }
 
 const FEEDERS = [
@@ -146,7 +233,7 @@ async function onSession(session) {
       paint();
       return;
     }
-    const cached = remote.cachedRegister(user.role === 'Admin');
+    const cached = remote.cachedRegister(user.role === 'Admin' || can('users_manage'));
     if (cached) {
       adopt(cached);
       booting = false;
@@ -170,7 +257,7 @@ async function onSession(session) {
 }
 
 async function pullRegister() {
-  const data = await remote.loadRegister(user.role === 'Admin');
+  const data = await remote.loadRegister(user.role === 'Admin' || can('users_manage'));
   adopt(data);
 }
 
@@ -251,6 +338,7 @@ function paint() {
           Simulate View:
           <select id="sim-role-select" style="width: 100%; font-size: 0.75rem; padding: 2px 4px; margin-top: 2px; border-radius: 4px; background: #1e293b; color: #f8fafc; border: 1px solid #334155;">
             <option value=""${!simulatedRole ? ' selected' : ''}>👑 Admin (Full Control)</option>
+            <option value="Division"${simulatedRole === 'Division' ? ' selected' : ''}>🗺️ Division (Survey & DPR)</option>
             <option value="Region"${simulatedRole === 'Region' ? ' selected' : ''}>🏢 Region (WBSEDCL)</option>
             <option value="Vendor"${simulatedRole === 'Vendor' ? ' selected' : ''}>🚜 Vendor (Turnkey)</option>
             <option value="Store"${simulatedRole === 'Store' ? ' selected' : ''}>📦 Store Keeper</option>
@@ -358,33 +446,64 @@ function renderWaiting() {
 }
 
 function renderUsers() {
+  const canManage = can('users_manage') || isAdmin();
+
   const rows = people.map((person) => {
     const isSelf = sessionUser?.id === person.id;
     const shortId = person.email.endsWith('@malda-ug.gov.in')
       ? person.email.replace('@malda-ug.gov.in', '')
       : person.email;
 
+    const perms = getUserPermissions(person);
+    const enabledPerms = PERMISSION_DEFS.filter((d) => Boolean(perms[d.key]));
+    const enabledCount = enabledPerms.length;
+
+    let badgesHtml = '';
+    if (enabledCount === PERMISSION_DEFS.length) {
+      badgesHtml = '<span class="badge ok" style="font-size: 11px;">👑 All 12 (Full Access)</span>';
+    } else if (enabledCount === 0) {
+      badgesHtml = '<span class="badge bad" style="font-size: 11px;">🚫 None (Blocked)</span>';
+    } else {
+      const topBadges = enabledPerms.slice(0, 3).map((d) => `<span class="perm-pill">${d.icon} ${esc(d.label.split(' ')[0])}</span>`).join(' ');
+      const extra = enabledCount > 3 ? `<span class="perm-pill-more">+${enabledCount - 3} more</span>` : '';
+      badgesHtml = `<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">${topBadges} ${extra}</div>`;
+    }
+
     return `
       <tr>
         <td>
-          <strong>${esc(person.name)}</strong>
+          <div style="font-weight: 700; color: #0f172a;">${esc(person.name)}</div>
           <span class="meta">ID: <code>${esc(shortId)}</code> (${esc(person.email)})</span>
         </td>
         <td>
-          <select data-person="${esc(person.id)}" data-field="role">
-            ${['Vendor', 'Region', 'Store', 'Viewer', 'Admin', 'Turnkey', 'WBSEDCL'].map((r) => `<option${r === person.role ? ' selected' : ''}>${r}</option>`).join('')}
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div>${badgesHtml}</div>
+            ${canManage ? `
+              <div>
+                <button type="button" class="tiny primary" data-action="edit-user-perms" data-id="${esc(person.id)}" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 650; padding: 3px 9px;">
+                  <span>⚙️</span> Authorizations (${enabledCount}/12)
+                </button>
+              </div>
+            ` : ''}
+          </div>
+        </td>
+        <td>
+          <select data-person="${esc(person.id)}" data-field="role" style="font-size: 12px; padding: 4px 6px;">
+            ${['Admin', 'Division', 'Region', 'Vendor', 'Store', 'Viewer'].map((r) => `<option${r === person.role ? ' selected' : ''}>${r}</option>`).join('')}
           </select>
         </td>
         <td>
-          <select data-person="${esc(person.id)}" data-field="active">
+          <select data-person="${esc(person.id)}" data-field="active" style="font-size: 12px; padding: 4px 6px;">
             <option${person.active ? ' selected' : ''}>Active</option>
             <option${!person.active ? ' selected' : ''}>Inactive</option>
           </select>
         </td>
         <td>
           <div style="display: flex; gap: 6px; align-items: center;">
-            <button type="button" class="tiny" data-action="save-person" data-id="${esc(person.id)}">Save</button>
-            <button type="button" class="tiny ghost" data-action="reset-pin" data-id="${esc(person.id)}" data-name="${esc(person.name)}">Reset PIN</button>
+            ${canManage ? `
+              <button type="button" class="tiny" data-action="save-person" data-id="${esc(person.id)}">Save</button>
+              <button type="button" class="tiny ghost" data-action="reset-pin" data-id="${esc(person.id)}" data-name="${esc(person.name)}">Reset PIN</button>
+            ` : '<span class="quiet">View Only</span>'}
           </div>
         </td>
       </tr>
@@ -392,11 +511,11 @@ function renderUsers() {
   });
 
   return `
-    ${head('People & Logins', 'Create user accounts with manual User ID, PIN, and Role. Manage existing user access, roles, and PINs.')}
+    ${head('People & Custom Authorizations', 'Create user accounts and configure granular on/off authorizations for each individual user.')}
 
     <form class="auth-card" id="form-create-user" style="max-width: 100%; width: 100%; margin: 0 0 24px 0; box-shadow: none;">
-      <h2 style="margin: 0; font-size: 16px;">Create New User Account (Manual ID & PIN)</h2>
-      <p style="margin-top: 2px; font-size: 12px; color: var(--muted);">Manually specify User ID, PIN, Name, and Role. Account is created as Active by default.</p>
+      <h2 style="margin: 0; font-size: 16px;">Create New User Account & Authorizations</h2>
+      <p style="margin-top: 2px; font-size: 12px; color: var(--muted);">Specify User ID, PIN, Name, and choose custom ON/OFF authorizations for the user.</p>
       
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px;">
         <label>Full Name
@@ -408,27 +527,103 @@ function renderUsers() {
         <label>PIN / Password
           <input name="pin" type="text" required placeholder="e.g. 1234 or pin123" />
         </label>
-        <label>User Role
-          <select name="role" required style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
-            <option value="Vendor">Vendor</option>
+        <label>Role Preset
+          <select name="role" id="new-user-role" required style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+            <option value="Division">Division (Survey & DPR)</option>
             <option value="Region">Region (WBSEDCL DE)</option>
+            <option value="Vendor" selected>Vendor / Turnkey</option>
             <option value="Store">Store Keeper</option>
-            <option value="Turnkey">Turnkey Contractor</option>
-            <option value="WBSEDCL">WBSEDCL Engineer</option>
             <option value="Viewer">Viewer (Read Only)</option>
             <option value="Admin">Admin (Full Access)</option>
           </select>
         </label>
       </div>
 
+      <!-- Compact Checklist of 12 Authorizations with ON/OFF Switches -->
+      <div style="margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #f8fafc;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 12.5px; font-weight: 700; color: #1e293b;">
+            ⚙️ Turn Individual Authorizations ON / OFF for this User:
+          </span>
+          <span style="font-size: 11px; color: #64748b;">Preset auto-selects defaults; feel free to toggle any switch</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px;">
+          ${PERMISSION_DEFS.map((def) => {
+            const defaultVendor = Boolean(ROLE_DEFAULT_PERMISSIONS.Vendor[def.key]);
+            return `
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; cursor: pointer;">
+                <input type="checkbox" name="perm_${def.key}" ${defaultVendor ? 'checked' : ''} style="accent-color: #2563eb;" />
+                <span>${def.icon} <strong>${def.label}</strong></span>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
       <p class="form-msg" style="margin-top: 8px;"></p>
-      <div style="margin-top: 8px; display: flex; gap: 8px;">
-        <button type="submit" class="primary" style="width: auto; padding: 8px 16px;">Create User Account</button>
+      <div style="margin-top: 10px; display: flex; gap: 8px;">
+        <button type="submit" class="primary" style="width: auto; padding: 8px 18px; font-weight: 700;">Create User Account</button>
       </div>
     </form>
 
     <h2 style="font-size: 16px; margin: 16px 0 8px;">Existing User Accounts (${people.length})</h2>
-    ${table(['Name & User ID', 'Role', 'Access Status', 'Actions'], rows, 4, 'No logins yet.')}
+    ${table(['Name & User ID', 'Custom Authorizations (On / Off)', 'Role Preset', 'Access Status', 'Actions'], rows, 5, 'No logins yet.')}
+  `;
+}
+
+function userPermissionsModal(person) {
+  if (!person) return '';
+  const shortId = person.email.endsWith('@malda-ug.gov.in')
+    ? person.email.replace('@malda-ug.gov.in', '')
+    : person.email;
+  const currentPerms = getUserPermissions(person);
+  const enabledCount = PERMISSION_DEFS.filter((d) => Boolean(currentPerms[d.key])).length;
+
+  return `
+    ${modalTitle('Custom User Authorizations', `Configure granular ON/OFF permissions for ${esc(person.name)} (${esc(shortId)})`)}
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin: 10px 0 14px;">
+      <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
+        Quick Apply Preset:
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Admin">👑 Full Admin</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Division">🗺️ Division (Survey & DPR)</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Region">🏢 Region (DE)</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Vendor">🚜 Turnkey / Vendor</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Store">📦 Store Keeper</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Viewer">👁️ View Only</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="all" style="color: #2563eb; font-weight: 700;">Select All</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="none" style="color: #dc2626; font-weight: 700;">Clear All</button>
+      </div>
+    </div>
+
+    <form class="entry entry-plain" id="form-user-permissions" data-id="${esc(person.id)}">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; max-height: 52vh; overflow-y: auto; padding: 2px;">
+        ${PERMISSION_DEFS.map((def) => {
+          const isChecked = Boolean(currentPerms[def.key]);
+          return `
+            <label class="perm-toggle-card${isChecked ? ' active' : ''}" style="display: flex; align-items: center; justify-content: space-between; border: 1.5px solid ${isChecked ? '#2563eb' : '#e2e8f0'}; border-radius: 8px; padding: 10px 12px; background: ${isChecked ? '#eff6ff' : '#ffffff'}; cursor: pointer; transition: all 0.15s ease;">
+              <div style="display: flex; align-items: flex-start; gap: 9px; flex: 1; margin-right: 12px;">
+                <span style="font-size: 18px; line-height: 1.2;">${def.icon}</span>
+                <div>
+                  <div style="font-weight: 700; font-size: 13px; color: #0f172a;">${def.label}</div>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 1px;">${def.desc}</div>
+                </div>
+              </div>
+              <input type="checkbox" name="perm_${def.key}" ${isChecked ? 'checked' : ''} class="perm-switch" style="width: 18px; height: 18px; cursor: pointer; accent-color: #2563eb;" />
+            </label>
+          `;
+        }).join('')}
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+        <span style="font-size: 12px; color: #64748b;" id="perm-counter">${enabledCount} of 12 Authorizations Enabled</span>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="ghost" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary" style="font-weight: 700; padding: 8px 20px;">Save Authorizations</button>
+        </div>
+      </div>
+    </form>
   `;
 }
 
@@ -449,6 +644,7 @@ function defaultContract() {
     targetCompletionDate: PROJECT_INFO.targetCompletionDate || '2025-07-15',
     bgEntries: [],
     eotEntries: [],
+    feederSurveys: remote.defaultFeederSurveys ? remote.defaultFeederSurveys() : [],
     remarks: '',
     updatedBy: '',
     updatedAt: ''
@@ -532,6 +728,7 @@ function renderHome() {
 function renderBoq() {
   const tabs = [
     ['overview', 'Overview & Milestones'],
+    ['survey', 'Feeder Survey'],
     ['material', 'Material (Part-A)'],
     ['erection', 'Erection (Part-B)']
   ];
@@ -539,30 +736,255 @@ function renderBoq() {
   if (boqTab === 'overview') {
     return renderBoqOverview(tabs);
   }
+  if (boqTab === 'survey') {
+    return renderBoqSurvey(tabs);
+  }
 
   const material = boqTab === 'material' || (boqTab !== 'erection' && boqPart !== 'Part-B (Erection)');
-  const rows = boqItems.filter((item) => material ? isMaterial(item) : !isMaterial(item));
   const hint = isAdmin()
     ? 'Edit updates the line. Survey quantity is entered here.'
     : 'Click an item to enter survey quantity.';
+
+  const materialItems = boqItems.filter(isMaterial);
+  const erectionItems = boqItems.filter((item) => !isMaterial(item));
+
+  // Partition Material items: LOA Baseline (rate > 0) vs Erection-Supplied / Extra Items (rate === 0)
+  const loaMaterialItems = materialItems.filter((item) => Number(item.rate) > 0);
+  const erectionSupplyItems = materialItems.filter((item) => (Number(item.rate) || 0) === 0);
+
+  const partMaterialTotal = sum(loaMaterialItems, (item) => (Number(item.loaQty) || 0) * (Number(item.rate) || 0));
+  const partErectionTotal = sum(erectionItems, (item) => (Number(item.loaQty) || 0) * (Number(item.rate) || 0));
+  const currentPartTotal = material ? partMaterialTotal : partErectionTotal;
+
+  const materialExecutedTotal = sum(loaMaterialItems, (item) => (Number(executedQty(item)) || 0) * (Number(item.rate) || 0));
+  const erectionExecutedTotal = sum(erectionItems, (item) => (Number(executedQty(item)) || 0) * (Number(item.rate) || 0));
+  const currentExecutedTotal = material ? materialExecutedTotal : erectionExecutedTotal;
+
+  const grandTotalExclGst = partMaterialTotal + partErectionTotal;
+  const gstRate = PROJECT_INFO.gstRate || 0.18;
+  const gstAmount = grandTotalExclGst * gstRate;
+  const grandTotalWithGst = grandTotalExclGst + gstAmount;
+
+  const contract = contractData || defaultContract();
+
+  let scheduleContent = '';
+
+  if (material) {
+    // ----------------------------------------------------
+    // PART-A (MATERIAL): TWO SEPARATE CLEAN GROUPS
+    // ----------------------------------------------------
+    const loaTableFooter = `
+      <tr class="boq-foot-row">
+        <td colspan="3"><strong>Total Part-A LOA Baseline (${loaMaterialItems.length} Items)</strong></td>
+        <td class="num"></td>
+        <td class="num"></td>
+        <td class="num quiet" style="font-weight:650;">Baseline Subtotal (Excl. GST):</td>
+        <td class="num font-mono"><strong style="font-size: 13.5px; color: #0f172a;">${formatInr(partMaterialTotal)}</strong></td>
+        <td class="num font-mono"><strong style="color: #059669;">${formatMoney(materialExecutedTotal)}</strong></td>
+        <td></td>
+      </tr>
+    `;
+
+    const erectionSupplyTableFooter = `
+      <tr class="boq-foot-row" style="background: #fffbeb;">
+        <td colspan="3"><strong>Total Erection-Supplied Materials (${erectionSupplyItems.length} Items)</strong></td>
+        <td class="num"></td>
+        <td class="num"></td>
+        <td class="num quiet" style="font-weight:650;">Direct Material Cost:</td>
+        <td class="num font-mono"><strong style="color: #b45309;">₹0.00 (Covered in Erection)</strong></td>
+        <td class="num font-mono"><strong style="color: #059669;">${formatMoney(sum(erectionSupplyItems, (item) => (Number(executedQty(item)) || 0) * (Number(item.rate) || 0)))}</strong></td>
+        <td></td>
+      </tr>
+    `;
+
+    scheduleContent = `
+      <!-- Group 1: Official LOA Baseline Material Schedule -->
+      <div class="boq-group-header">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h3 style="margin: 0; font-size: 14px;">Part-A: Material Schedule</h3>
+            <span class="badge ok">${loaMaterialItems.length} Items</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13px; color: #0f172a;">
+            Total: ${formatInr(partMaterialTotal)}
+          </div>
+        </div>
+      </div>
+
+      ${table(['Sl', 'Description', 'Unit', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Rate (₹)'), numHead('Total Cost (₹)'), numHead('Executed'), ''], loaMaterialItems.map((item) => {
+        const itemCost = (Number(item.loaQty) || 0) * (Number(item.rate) || 0);
+        const executedCost = (Number(executedQty(item)) || 0) * (Number(item.rate) || 0);
+        return `
+          <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
+            <td>${item.slNo}</td>
+            <td class="desc" title="${esc(item.description)}">${nameButton(item)}</td>
+            <td>${esc(item.unit)}</td>
+            <td class="num">${qtyText(item.loaQty, item.unit)}</td>
+            <td class="num">${surveyText(item)}</td>
+            <td class="num">${fmtQty(item.rate)}</td>
+            <td class="num font-mono"><strong>${formatInr(itemCost)}</strong></td>
+            <td class="num">${qtyText(executedQty(item), item.unit)}</td>
+            <td class="row-actions">${isAdmin() ? `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Edit</button><button type="button" class="tiny danger" data-action="delete-boq" data-sl="${item.slNo}">Delete</button>` : ''}</td>
+          </tr>
+        `;
+      }), 9, 'No baseline material items found.', loaTableFooter)}
+
+      <!-- Group 2: Items Part of Erection Schedule -->
+      <div class="boq-group-header erection-supply-header" style="margin-top: 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h3 style="margin: 0; font-size: 14px;">Materials Supplied under Erection Scope</h3>
+            <span class="badge wait">${erectionSupplyItems.length} Items</span>
+          </div>
+          <div class="quiet" style="font-size: 12px; font-weight: 600;">
+            Supplied within Erection Scope (₹0 Rate)
+          </div>
+        </div>
+      </div>
+
+      ${erectionSupplyItems.length > 0 ? table(['Sl', 'Description', 'Unit', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Rate (₹)'), numHead('Total Cost (₹)'), numHead('Executed'), ''], erectionSupplyItems.map((item) => {
+        return `
+          <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
+            <td>${item.slNo}</td>
+            <td class="desc" title="${esc(item.description)}">${nameButton(item)}</td>
+            <td>${esc(item.unit)}</td>
+            <td class="num">${qtyText(item.loaQty, item.unit)}</td>
+            <td class="num">${surveyText(item)}</td>
+            <td class="num"><span class="quiet">₹0.00</span></td>
+            <td class="num font-mono"><span class="quiet">₹0.00</span></td>
+            <td class="num">${qtyText(executedQty(item), item.unit)}</td>
+            <td class="row-actions">${isAdmin() ? `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Edit</button><button type="button" class="tiny danger" data-action="delete-boq" data-sl="${item.slNo}">Delete</button>` : ''}</td>
+          </tr>
+        `;
+      }), 9, 'No erection-supplied material items found.', erectionSupplyTableFooter) : ''}
+    `;
+  } else {
+    // ----------------------------------------------------
+    // PART-B (ERECTION SCHEDULE)
+    // ----------------------------------------------------
+    const erectionTableFooter = `
+      <tr class="boq-foot-row">
+        <td colspan="3"><strong>Total Part-B LOA Baseline (${erectionItems.length} Items)</strong></td>
+        <td class="num"></td>
+        <td class="num"></td>
+        <td class="num quiet" style="font-weight:650;">Subtotal (Excl. GST):</td>
+        <td class="num font-mono"><strong style="font-size: 13.5px; color: #0f172a;">${formatInr(partErectionTotal)}</strong></td>
+        <td class="num font-mono"><strong style="color: #059669;">${formatMoney(erectionExecutedTotal)}</strong></td>
+        <td></td>
+      </tr>
+    `;
+
+    scheduleContent = `
+      <div class="boq-group-header">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h3 style="margin: 0; font-size: 14px;">Part-B: Erection Schedule</h3>
+            <span class="badge ok">${erectionItems.length} Items</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13px; color: #0f172a;">
+            Total: ${formatInr(partErectionTotal)}
+          </div>
+        </div>
+      </div>
+
+      ${table(['Sl', 'Description', 'Unit', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Rate (₹)'), numHead('Total Cost (₹)'), numHead('Executed'), ''], erectionItems.map((item) => {
+        const itemCost = (Number(item.loaQty) || 0) * (Number(item.rate) || 0);
+        const executedCost = (Number(executedQty(item)) || 0) * (Number(item.rate) || 0);
+        return `
+          <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
+            <td>${item.slNo}</td>
+            <td class="desc" title="${esc(item.description)}">${nameButton(item)}</td>
+            <td>${esc(item.unit)}</td>
+            <td class="num">${qtyText(item.loaQty, item.unit)}</td>
+            <td class="num">${surveyText(item)}</td>
+            <td class="num">${fmtQty(item.rate)}</td>
+            <td class="num font-mono"><strong>${formatInr(itemCost)}</strong></td>
+            <td class="num">${qtyText(executedQty(item), item.unit)}</td>
+            <td class="row-actions">${isAdmin() ? `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Edit</button><button type="button" class="tiny danger" data-action="delete-boq" data-sl="${item.slNo}">Delete</button>` : ''}</td>
+          </tr>
+        `;
+      }), 9, 'No erection items found.', erectionTableFooter)}
+    `;
+  }
+
   return `
-    ${head('BOQ', hint)}
+    ${head('Bill of Quantities (BOQ)', 'LOA contract schedule items, rates, and executed quantities.')}
     <div class="tab-row">
       ${tabBar('boq', tabs, boqTab)}
       ${isAdmin() ? '<button type="button" class="ghost" data-action="open-entry" data-mode="new">New item</button>' : ''}
     </div>
-    ${table(['Sl', 'Description', 'Unit', numHead('LOA Qty'), numHead('Survey Qty'), numHead('Rate'), numHead('Executed'), ''], rows.map((item) => `
-      <tr class="pick" data-action="open-entry" data-sl="${item.slNo}" data-q="${esc(searchText(item, itemTitle(item)))}">
-        <td>${item.slNo}</td>
-        <td class="desc" title="${esc(item.description)}">${nameButton(item)}</td>
-        <td>${esc(item.unit)}</td>
-        <td class="num">${qtyText(item.loaQty, item.unit)}</td>
-        <td class="num">${surveyText(item)}</td>
-        <td class="num">${fmtQty(item.rate)}</td>
-        <td class="num">${qtyText(executedQty(item), item.unit)}</td>
-        <td class="row-actions">${isAdmin() ? `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Edit</button><button type="button" class="tiny danger" data-action="delete-boq" data-sl="${item.slNo}">Delete</button>` : ''}</td>
-      </tr>
-    `), 8)}
+
+    <div class="kpis" style="margin-top: 14px; margin-bottom: 14px;">
+      ${kpi(material ? 'Part-A Scope' : 'Part-B Scope', formatCr(currentPartTotal), `${material ? loaMaterialItems.length : erectionItems.length} Items`)}
+      ${kpi('Executed Value', formatMoney(currentExecutedTotal), `${currentPartTotal > 0 ? ((currentExecutedTotal / currentPartTotal) * 100).toFixed(1) : 0}% progress`)}
+      ${kpi('Total (Excl. GST)', formatCr(grandTotalExclGst), `Material: ${formatCr(partMaterialTotal)} · Erection: ${formatCr(partErectionTotal)}`)}
+      ${kpi('With 18% GST', formatCr(grandTotalWithGst), `GST: ${formatCr(gstAmount)}`)}
+    </div>
+
+    ${scheduleContent}
+
+    ${renderLoaSummarySection({
+      material,
+      partMaterialTotal,
+      partErectionTotal,
+      grandTotalExclGst,
+      gstAmount,
+      grandTotalWithGst,
+      materialExecutedTotal,
+      erectionExecutedTotal
+    })}
+  `;
+}
+
+function renderLoaSummarySection({
+  material,
+  partMaterialTotal,
+  partErectionTotal,
+  grandTotalExclGst,
+  gstAmount,
+  grandTotalWithGst,
+  materialExecutedTotal,
+  erectionExecutedTotal
+}) {
+  const contract = contractData || defaultContract();
+  return `
+    <div class="compact-card" style="margin-top: 20px;">
+      <div class="compact-card-header">
+        <div>
+          <h3>LOA Schedule Financial Summary</h3>
+          <p>Contract Baseline · LOA No. <strong>${esc(contract.loaNo || PROJECT_INFO.poNumber)}</strong></p>
+        </div>
+        <button type="button" class="tiny ghost" data-action="page-tab" data-group="boq" data-tab="overview">
+          Full Contract Overview →
+        </button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 4px;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+          <div class="quiet" style="font-size: 11px; text-transform: uppercase; font-weight: 650;">Part-A Material</div>
+          <div style="font-size: 16px; font-weight: 700; color: #1e3a8a; margin-top: 2px;">${formatInr(partMaterialTotal)}</div>
+          <div class="quiet" style="font-size: 11px; margin-top: 2px;">Executed: <strong style="color: #059669;">${formatMoney(materialExecutedTotal)}</strong></div>
+        </div>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+          <div class="quiet" style="font-size: 11px; text-transform: uppercase; font-weight: 650;">Part-B Erection</div>
+          <div style="font-size: 16px; font-weight: 700; color: #065f46; margin-top: 2px;">${formatInr(partErectionTotal)}</div>
+          <div class="quiet" style="font-size: 11px; margin-top: 2px;">Executed: <strong style="color: #059669;">${formatMoney(erectionExecutedTotal)}</strong></div>
+        </div>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+          <div class="quiet" style="font-size: 11px; text-transform: uppercase; font-weight: 650;">Subtotal (Excl. GST)</div>
+          <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 2px;">${formatInr(grandTotalExclGst)}</div>
+          <div class="quiet" style="font-size: 11px; margin-top: 2px;">GST (18%): ${formatInr(gstAmount)}</div>
+        </div>
+
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 10px 12px;">
+          <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #065f46;">Total Order Value</div>
+          <div style="font-size: 16px; font-weight: 800; color: #065f46; margin-top: 2px;">${formatInr(grandTotalWithGst)}</div>
+          <div style="font-size: 11px; color: #047857; margin-top: 2px;">Incl. 18% GST (${formatCr(grandTotalWithGst)})</div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -580,6 +1002,21 @@ function renderBoqOverview(tabs) {
   const eots = contract.eotEntries || [];
   const approvedEots = eots.filter((e) => e.status === 'Approved');
 
+  const materialItems = boqItems.filter(isMaterial);
+  const erectionItems = boqItems.filter((item) => !isMaterial(item));
+  const loaMaterialItems = materialItems.filter((item) => Number(item.rate) > 0);
+  const erectionSupplyItems = materialItems.filter((item) => (Number(item.rate) || 0) === 0);
+
+  const partMaterialTotal = sum(loaMaterialItems, (item) => (Number(item.loaQty) || 0) * (Number(item.rate) || 0));
+  const partErectionTotal = sum(erectionItems, (item) => (Number(item.loaQty) || 0) * (Number(item.rate) || 0));
+  const grandTotalExclGst = partMaterialTotal + partErectionTotal;
+  const gstRate = PROJECT_INFO.gstRate || 0.18;
+  const gstAmount = grandTotalExclGst * gstRate;
+  const grandTotalWithGst = grandTotalExclGst + gstAmount;
+
+  const materialPct = grandTotalExclGst > 0 ? ((partMaterialTotal / grandTotalExclGst) * 100).toFixed(2) : '0.00';
+  const erectionPct = grandTotalExclGst > 0 ? ((partErectionTotal / grandTotalExclGst) * 100).toFixed(2) : '0.00';
+
   const l1StatusBadge = contract.scheduleApprStatus === 'Approved'
     ? '<span class="badge ok">Approved</span>'
     : contract.scheduleApprStatus === 'Revision Requested'
@@ -589,65 +1026,186 @@ function renderBoqOverview(tabs) {
     : '<span class="badge wait">Pending</span>';
 
   return `
-    ${head('BOQ & Contract Overview', 'Contract milestones, LOA acceptance, Bank Guarantees (BG), L1/L2 schedules, and completion targets.')}
+    ${head('Contract & BOQ Overview', 'Baseline financial schedule, survey variation tracking, and milestones.')}
     <div class="tab-row">
       ${tabBar('boq', tabs, 'overview')}
       ${canEdit ? '<button type="button" class="ghost" data-action="contract-edit-milestones">Edit Milestones</button>' : ''}
     </div>
 
-    <div class="kpis" style="margin-top: 14px;">
-      ${kpi('Contract Value', formatCr(PROJECT_INFO.totalPoValue), `Excl GST · With GST: ${formatCr(PROJECT_INFO.totalValueWithGst)}`)}
-      ${kpi('LOA Date', formatDisplayDate(contract.loaDate || PROJECT_INFO.poDate), contract.acceptanceDate ? `Accepted: ${formatDisplayDate(contract.acceptanceDate)}` : 'Acceptance pending')}
-      ${kpi('Effective Target', formatDisplayDate(effTarget), days >= 0 ? `${days} days left` : `${Math.abs(days)} days delayed`)}
-      ${kpi('Bank Guarantees', formatMoney(totalBgActive), `${activeBgs.length} active (${formatMoney(totalBgSubmitted)} total)`)}
+    <!-- Executive KPIs -->
+    <div class="overview-kpis">
+      <div class="overview-kpi-card kpi-loa">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">Contract Value (LOA)</span>
+        </div>
+        <div class="overview-kpi-value">${formatCr(grandTotalExclGst)}</div>
+        <div class="overview-kpi-sub">With 18% GST: <strong>${formatCr(grandTotalWithGst)}</strong></div>
+      </div>
+
+      <div class="overview-kpi-card kpi-survey">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">Post-Survey Value</span>
+        </div>
+        <div class="overview-kpi-value" style="color: #7c3aed;">Yet to finalize</div>
+        <div class="overview-kpi-sub">Joint route survey in progress</div>
+      </div>
+
+      <div class="overview-kpi-card kpi-target">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">Target Completion</span>
+        </div>
+        <div class="overview-kpi-value">${esc(formatDisplayDate(effTarget))}</div>
+        <div class="overview-kpi-sub">${days >= 0 ? `<strong>${days} days</strong> remaining` : `<strong style="color:#b91c1c;">${Math.abs(days)} days</strong> delayed`}</div>
+      </div>
+
+      <div class="overview-kpi-card kpi-bg">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">Bank Guarantees</span>
+        </div>
+        <div class="overview-kpi-value">${formatMoney(totalBgActive)}</div>
+        <div class="overview-kpi-sub"><strong>${activeBgs.length} Active</strong> (${formatMoney(totalBgSubmitted)} submitted)</div>
+      </div>
     </div>
 
-    <div class="contract-overview-wrap">
-      <!-- Card 1: LOA Acceptance & L1/L2 Schedule Milestones -->
-      <div class="contract-card">
-        <div class="contract-card-header">
+    <div class="contract-overview-wrap" style="gap: 14px;">
+      <!-- Card 1: Tabulated Executive Cost Summary & Survey Variation Tracking -->
+      <div class="compact-card">
+        <div class="compact-card-header">
           <div>
-            <h3>LOA Baseline & Implementation Schedule</h3>
-            <p>Letter of Award details and L1/L2 execution schedule approval tracking</p>
+            <h3>Executive Cost Summary & Variation Tracking</h3>
+            <p>LOA No. <strong>${esc(contract.loaNo || PROJECT_INFO.poNumber)}</strong> · Agency: <strong>${esc(PROJECT_INFO.agencyName || 'M/s Tarun Enterprise')}</strong></p>
           </div>
-          ${canEdit ? '<button type="button" class="tiny" data-action="contract-edit-milestones">Edit</button>' : ''}
         </div>
-        <div class="contract-grid-2">
-          <div class="contract-item-box">
-            <div class="contract-item-label">Letter of Award (LOA / PO)</div>
-            <div class="contract-item-val">${esc(contract.loaNo || PROJECT_INFO.poNumber)}</div>
-            <div class="contract-item-sub">LOA Date: <strong>${esc(formatDisplayDate(contract.loaDate || PROJECT_INFO.poDate))}</strong></div>
-            <div class="contract-item-sub" style="margin-top:8px;">
-              Date of Acceptance: <strong>${contract.acceptanceDate ? esc(formatDisplayDate(contract.acceptanceDate)) : '<span class="badge wait">Pending</span>'}</strong>
-            </div>
-            ${contract.acceptanceRef ? `<div class="contract-item-sub">Acceptance Ref: <strong>${esc(contract.acceptanceRef)}</strong></div>` : ''}
-          </div>
 
-          <div class="contract-item-box">
-            <div class="contract-item-label">L1 / L2 Schedule Milestones</div>
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 6px;">
-              <span class="contract-item-val" style="font-size:14px;">Approval Status</span>
-              ${l1StatusBadge}
-            </div>
-            <div class="contract-item-sub">
-              Submission Date: <strong>${contract.scheduleSubDate ? esc(formatDisplayDate(contract.scheduleSubDate)) : '—'}</strong>
-              ${contract.scheduleSubRef ? ` (Ref: ${esc(contract.scheduleSubRef)})` : ''}
-            </div>
-            <div class="contract-item-sub">
-              Approval Date: <strong>${contract.scheduleApprDate ? esc(formatDisplayDate(contract.scheduleApprDate)) : '—'}</strong>
-              ${contract.scheduleApprRef ? ` (Memo: ${esc(contract.scheduleApprRef)})` : ''}
-            </div>
-            ${contract.scheduleApprRemarks ? `<div class="contract-item-sub" style="margin-top:6px; color:#475569; font-style:italic;">Remarks: ${esc(contract.scheduleApprRemarks)}</div>` : ''}
-          </div>
+        <div class="overview-cost-table-wrap">
+          <table class="overview-cost-table">
+            <thead>
+              <tr class="overview-cost-superhead">
+                <th colspan="4" class="superhead-baseline">LOA Awarded Baseline</th>
+                <th colspan="3" class="superhead-survey survey-col-start">Post-Survey Variation</th>
+              </tr>
+              <tr class="overview-cost-subhead">
+                <th style="width: 32%;">Component</th>
+                <th style="text-align: center; width: 8%;">Items</th>
+                <th style="text-align: right; width: 10%;">Share</th>
+                <th style="text-align: right; width: 18%;">Baseline Cost (₹)</th>
+                <th class="survey-col survey-col-start" style="text-align: center; width: 14%;">Survey Cost (₹)</th>
+                <th class="survey-col" style="text-align: center; width: 12%;">Variation (₹)</th>
+                <th class="survey-col" style="text-align: center; width: 6%;">Var %</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Part-A: Material Schedule</strong></td>
+                <td style="text-align: center;">${loaMaterialItems.length}</td>
+                <td style="text-align: right;">${materialPct}%</td>
+                <td style="text-align: right; font-weight: 600;">${formatInr(partMaterialTotal)}</td>
+                <td class="survey-col survey-col-start" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+              </tr>
+              <tr>
+                <td><strong>Part-B: Erection Schedule</strong></td>
+                <td style="text-align: center;">${erectionItems.length}</td>
+                <td style="text-align: right;">${erectionPct}%</td>
+                <td style="text-align: right; font-weight: 600;">${formatInr(partErectionTotal)}</td>
+                <td class="survey-col survey-col-start" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+              </tr>
+              <tr class="subtotal-row">
+                <td><strong>TOTAL AMOUNT (EXCLUDING GST)</strong></td>
+                <td style="text-align: center;"><strong>${loaMaterialItems.length + erectionItems.length}</strong></td>
+                <td style="text-align: right;">100.0%</td>
+                <td style="text-align: right; font-size: 13.5px; color: #0f172a;"><strong>${formatInr(grandTotalExclGst)}</strong></td>
+                <td class="survey-col survey-col-start" style="text-align: center;"><span class="badge wait">Yet to finalize</span></td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+              </tr>
+              <tr>
+                <td>Statutory GST (${(gstRate * 100).toFixed(0)}%)</td>
+                <td style="text-align: center;">—</td>
+                <td style="text-align: right;">${(gstRate * 100).toFixed(0)}%</td>
+                <td style="text-align: right; font-weight: 600;">${formatInr(gstAmount)}</td>
+                <td class="survey-col survey-col-start" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+              </tr>
+              <tr class="grandtotal-row">
+                <td><strong>TOTAL CONTRACT ORDER VALUE (INCL. GST)</strong></td>
+                <td style="text-align: center;"><strong>${loaMaterialItems.length + erectionItems.length}</strong></td>
+                <td style="text-align: right;">—</td>
+                <td style="text-align: right; font-size: 14.5px;"><strong>${formatInr(grandTotalWithGst)}</strong></td>
+                <td class="survey-col survey-col-start" style="text-align: center;"><span class="badge wait" style="font-weight:700;">Yet to finalize</span></td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+                <td class="survey-col" style="text-align: center; color: #94a3b8;">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="overview-inwords-panel" style="margin-top: 10px;">
+          <div style="font-size: 11px; font-weight: 700; color: #6b21a8; text-transform: uppercase; letter-spacing: 0.04em;">LOA Baseline in Words</div>
+          <div class="inwords-text" style="margin-top: 2px;">${esc(numberToIndianWords(grandTotalExclGst))} (Excl. GST)</div>
+          <div class="inwords-gst" style="margin-top: 2px;">Incl. 18% GST: <strong>${esc(numberToIndianWords(grandTotalWithGst))}</strong></div>
         </div>
       </div>
 
-      <!-- Card 2: Bank Guarantees (Multi-entry) -->
-      <div class="contract-card">
-        <div class="contract-card-header">
+      <!-- Card 2: Tabulated Implementation Milestones -->
+      <div class="compact-card">
+        <div class="compact-card-header">
           <div>
-            <h3>Bank Guarantees (BG Details)</h3>
-            <p>Security deposit and performance bank guarantees submitted by Turnkey Agency</p>
+            <h3>Contract Milestones</h3>
+            <p>LOA baseline dates, schedule approvals, and completion timelines</p>
+          </div>
+          ${canEdit ? '<button type="button" class="tiny ghost" data-action="contract-edit-milestones">Edit Milestones</button>' : ''}
+        </div>
+        <div class="milestones-tabulated-wrap">
+          <table class="milestones-table">
+            <thead>
+              <tr>
+                <th style="width: 28%;">Milestone</th>
+                <th style="width: 28%;">Reference / Detail</th>
+                <th style="width: 20%;">Status</th>
+                <th style="width: 24%;">Date / Timeline</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Letter of Award (LOA)</strong></td>
+                <td><strong>${esc(contract.loaNo || PROJECT_INFO.poNumber)}</strong></td>
+                <td><span class="badge ok">Awarded</span></td>
+                <td>${esc(formatDisplayDate(contract.loaDate || PROJECT_INFO.poDate))}</td>
+              </tr>
+              <tr>
+                <td><strong>Date of Acceptance</strong></td>
+                <td>${contract.acceptanceRef ? `Ref: <strong>${esc(contract.acceptanceRef)}</strong>` : '—'}</td>
+                <td>${contract.acceptanceDate ? '<span class="badge ok">Accepted</span>' : '<span class="badge wait">Pending</span>'}</td>
+                <td>${contract.acceptanceDate ? esc(formatDisplayDate(contract.acceptanceDate)) : '<span class="quiet">Pending</span>'}</td>
+              </tr>
+              <tr>
+                <td><strong>Implementation Schedule (L1/L2)</strong></td>
+                <td>${contract.scheduleSubRef || (contract.scheduleSubDate ? `Sub: ${formatDisplayDate(contract.scheduleSubDate)}` : '—')}</td>
+                <td>${l1StatusBadge}</td>
+                <td>${contract.scheduleApprDate ? esc(formatDisplayDate(contract.scheduleApprDate)) : '—'}</td>
+              </tr>
+              <tr>
+                <td><strong>Target Completion</strong></td>
+                <td>Original: ${esc(formatDisplayDate(contract.targetCompletionDate || PROJECT_INFO.targetCompletionDate))}</td>
+                <td>${approvedEots.length > 0 ? `<span class="badge ok">${approvedEots.length} EOT Rev.</span>` : '<span class="badge ok">Original</span>'}</td>
+                <td><strong>${esc(formatDisplayDate(effTarget))}</strong> (${days >= 0 ? `${days}d left` : `${Math.abs(days)}d delayed`})</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Card 3: Bank Guarantees (Multi-entry) -->
+      <div class="compact-card">
+        <div class="compact-card-header">
+          <div>
+            <h3>Bank Guarantees (Security & Performance BGs)</h3>
+            <p>${activeBgs.length} active (${formatMoney(totalBgActive)}) · Total submitted: ${formatMoney(totalBgSubmitted)}</p>
           </div>
           ${canEdit ? '<button type="button" class="primary tiny" data-action="contract-add-bg">+ Add BG</button>' : ''}
         </div>
@@ -675,12 +1233,12 @@ function renderBoqOverview(tabs) {
         }), 9, 'No Bank Guarantees recorded yet. Region User or Admin can click "+ Add BG" to register one.')}
       </div>
 
-      <!-- Card 3: Target Completion Date & Extensions of Time (EOT) -->
-      <div class="contract-card">
-        <div class="contract-card-header">
+      <!-- Card 4: Target Completion Date & Extensions of Time (EOT) -->
+      <div class="compact-card">
+        <div class="compact-card-header">
           <div>
-            <h3>Target Completion Date & Revisions (EOT)</h3>
-            <p>Original LOA target date: <strong>${esc(formatDisplayDate(contract.targetCompletionDate || PROJECT_INFO.targetCompletionDate))}</strong> · Effective target: <strong>${esc(formatDisplayDate(effTarget))}</strong> (${approvedEots.length} Approved EOTs)</p>
+            <h3>Completion Target & Time Extensions (EOT)</h3>
+            <p>Original target: <strong>${esc(formatDisplayDate(contract.targetCompletionDate || PROJECT_INFO.targetCompletionDate))}</strong> · Effective target: <strong>${esc(formatDisplayDate(effTarget))}</strong> (${approvedEots.length} Approved EOTs)</p>
           </div>
           ${canEdit ? '<button type="button" class="primary tiny" data-action="contract-add-eot">+ Add Revision / EOT</button>' : ''}
         </div>
@@ -711,6 +1269,242 @@ function renderBoqOverview(tabs) {
   `;
 }
 
+function extractDtrQty(details, kva) {
+  if (!details || typeof details !== 'string') return '';
+  const re = new RegExp(`${kva}\\s*kVA[^\\d]*(\\d+)`, 'i');
+  const m = details.match(re);
+  return m ? m[1] : '';
+}
+
+function renderDtrCell(s) {
+  const counts = s.dtrCounts || {};
+  const standardKeys = ['630', '500', '315', '250', '160', '100'];
+  const activeKeys = standardKeys.filter((k) => Number(counts[k]) > 0);
+
+  if (activeKeys.length === 0 && !s.dtrOther) {
+    if (s.dtrDetails && s.dtrDetails !== '—') {
+      return `<div style="font-size: 11.5px; font-weight: 500;">${esc(s.dtrDetails)}</div>`;
+    }
+    return '<span class="quiet">—</span>';
+  }
+
+  const pills = activeKeys.map((k) => `
+    <span class="dtr-pill-badge" title="${k} kVA DTR: ${counts[k]} Nos">
+      ${k}k: <strong>${counts[k]}</strong>
+    </span>
+  `);
+
+  if (s.dtrOther) {
+    pills.push(`<span class="dtr-pill-badge custom" title="Other capacity">${esc(s.dtrOther)}</span>`);
+  }
+
+  const totalNos = Number(s.dtrTotalNos) || sum(activeKeys, (k) => Number(counts[k]));
+  const totalKva = Number(s.dtrTotalKva) || sum(activeKeys, (k) => Number(k) * Number(counts[k]));
+
+  return `
+    <div style="display: flex; flex-direction: column; gap: 3px;">
+      <div style="display: flex; flex-wrap: wrap; gap: 3px;">${pills.join('')}</div>
+      ${totalNos > 0 ? `<div class="quiet" style="font-size: 10px; font-weight: 600; color: #475569;">Total: ${totalNos} Nos (${totalKva.toLocaleString('en-IN')} kVA)</div>` : ''}
+    </div>
+  `;
+}
+
+function renderBoqSurvey(tabs) {
+  const contract = contractData || defaultContract();
+  // Filter out any legacy dummy records to keep survey register strictly blank until user data entry
+  const surveys = (contract.feederSurveys || []).filter((s) => !s.id || !s.id.startsWith('FS-0'));
+  const canEdit = isDivision() || isRegion() || isAdmin();
+
+  const totalRouteLength = sum(surveys, (s) => Number(s.routeLength) || 0);
+  const totalCable400 = sum(surveys, (s) => Number(s.cable400) || 0);
+  const totalCable185 = sum(surveys, (s) => Number(s.cable185) || 0);
+  const totalRmu3 = sum(surveys, (s) => Number(s.rmu3Way) || 0);
+  const totalRmu4 = sum(surveys, (s) => Number(s.rmu4Way) || 0);
+  const totalDtrNos = sum(surveys, (s) => Number(s.dtrTotalNos) || (s.dtrCounts ? sum(Object.values(s.dtrCounts), Number) : 0));
+  const totalDtrKva = sum(surveys, (s) => Number(s.dtrTotalKva) || 0);
+  const totalKit400 = sum(surveys, (s) => Number(s.termKit400) || 0);
+  const totalKit185 = sum(surveys, (s) => Number(s.termKit185) || 0);
+  const totalHdd = sum(surveys, (s) => Number(s.microTunneling) || 0);
+  const totalOpenCut = sum(surveys, (s) => Number(s.openCut) || 0);
+  const totalJackPush = sum(surveys, (s) => Number(s.jackPush) || 0);
+  const totalHdpe = sum(surveys, (s) => Number(s.hdpePipe) || 0);
+
+  const completedCount = surveys.filter((s) => s.status === 'Completed' || s.status === 'Approved').length;
+  const inProgressCount = surveys.filter((s) => s.status === 'In Progress').length;
+
+  return `
+    ${head('Feeder-wise Survey Summary', 'Joint route survey measurements certified by Malda Division.')}
+    <div class="tab-row">
+      ${tabBar('boq', tabs, 'survey')}
+    </div>
+
+    <!-- Feeder Survey Executive KPIs -->
+    <div class="overview-kpis">
+      <div class="overview-kpi-card kpi-loa">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">Surveyed Feeders</span>
+        </div>
+        <div class="overview-kpi-value">${surveys.length} Feeders</div>
+        <div class="overview-kpi-sub">${surveys.length > 0 ? `${completedCount} Completed · ${inProgressCount} in progress` : '<span class="quiet">No survey entries yet</span>'}</div>
+      </div>
+
+      <div class="overview-kpi-card kpi-survey">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">Route Length (R/L)</span>
+        </div>
+        <div class="overview-kpi-value" style="color: #6b21a8;">${(totalRouteLength / 1000).toFixed(2)} km</div>
+        <div class="overview-kpi-sub"><strong>${totalRouteLength.toLocaleString('en-IN')} meters</strong> route pegged</div>
+      </div>
+
+      <div class="overview-kpi-card kpi-target">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">HT XLPE Cables</span>
+        </div>
+        <div class="overview-kpi-value">${((totalCable400 + totalCable185) / 1000).toFixed(2)} km</div>
+        <div class="overview-kpi-sub">400: <strong>${(totalCable400 / 1000).toFixed(2)}k</strong> · 185: <strong>${(totalCable185 / 1000).toFixed(2)}k</strong></div>
+      </div>
+
+      <div class="overview-kpi-card kpi-bg">
+        <div class="overview-kpi-top">
+          <span class="overview-kpi-label">RMUs & DTRs</span>
+        </div>
+        <div class="overview-kpi-value">${totalRmu3 + totalRmu4} RMUs · ${totalDtrNos} DTRs</div>
+        <div class="overview-kpi-sub">${totalDtrKva > 0 ? `${totalDtrKva.toLocaleString('en-IN')} kVA Total DTR` : 'HDD: <strong>' + totalHdd.toLocaleString('en-IN') + 'm</strong> · HDPE: <strong>' + totalHdpe.toLocaleString('en-IN') + 'm</strong>'}</div>
+      </div>
+    </div>
+
+    <!-- Feeder Survey Table Card -->
+    <div class="compact-card" style="margin-top: 10px;">
+      <div class="compact-card-header">
+        <div>
+          <h3>Feeder Joint Survey Register</h3>
+        </div>
+        ${canEdit ? `
+          <button type="button" class="primary tiny" data-action="survey-add-feeder">
+            + Add Feeder Survey
+          </button>
+        ` : `
+          <span class="badge wait" title="Divisional Engineer or Admin access required">Divisional Access Only</span>
+        `}
+      </div>
+
+      <div class="feeder-survey-table-wrap">
+        <table class="feeder-survey-table">
+          <thead>
+            <tr class="feeder-superhead">
+              <th colspan="3" class="survey-th-id">Feeder Info</th>
+              <th colspan="3" class="survey-th-cables">Route & Cables (m)</th>
+              <th colspan="3" class="survey-th-equip">RMUs & DTRs</th>
+              <th colspan="2" class="survey-th-kits">Kits (Sets)</th>
+              <th colspan="4" class="survey-th-trench">Trenching (m)</th>
+              <th colspan="2" class="survey-th-status">Status & Actions</th>
+            </tr>
+            <tr class="feeder-subhead">
+              <th style="width: 35px; text-align: center;">#</th>
+              <th style="min-width: 130px;">Substation</th>
+              <th style="min-width: 160px;">Feeder Name</th>
+              
+              <th style="min-width: 90px; text-align: right;">Route (m)</th>
+              <th style="min-width: 85px; text-align: right;">400 sq.mm</th>
+              <th style="min-width: 85px; text-align: right;">185 sq.mm</th>
+
+              <th style="min-width: 60px; text-align: center;">3-Way</th>
+              <th style="min-width: 60px; text-align: center;">4-Way</th>
+              <th style="min-width: 130px;">DTR Capacity</th>
+
+              <th style="min-width: 65px; text-align: center;">Kit 400</th>
+              <th style="min-width: 65px; text-align: center;">Kit 185</th>
+
+              <th style="min-width: 85px; text-align: right;">HDD (m)</th>
+              <th style="min-width: 80px; text-align: right;">Open-Cut</th>
+              <th style="min-width: 80px; text-align: right;">JackPush</th>
+              <th style="min-width: 85px; text-align: right;">HDPE (m)</th>
+
+              <th style="min-width: 75px; text-align: center;">Status</th>
+              <th style="min-width: 75px; text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${surveys.length === 0 ? `
+              <tr>
+                <td colspan="17" class="empty" style="text-align: center; padding: 26px 16px; color: #64748b;">
+                  No feeder survey records entered yet. Click <strong>+ Add Feeder Survey</strong> above to record joint measurements.
+                </td>
+              </tr>
+            ` : surveys.map((s, idx) => {
+              const statusBadge = s.status === 'Completed' || s.status === 'Approved'
+                ? '<span class="badge ok">Completed</span>'
+                : s.status === 'In Progress'
+                ? '<span class="badge wait">In Progress</span>'
+                : s.status === 'Under Survey'
+                ? '<span class="badge idle">Under Survey</span>'
+                : `<span class="badge ok">${esc(s.status)}</span>`;
+
+              return `
+                <tr>
+                  <td style="text-align: center; font-weight: 600; color: #64748b;">${idx + 1}</td>
+                  <td>
+                    <div style="font-weight: 600; color: #0f172a;">${esc(s.ssName || '—')}</div>
+                  </td>
+                  <td>
+                    <div style="font-weight: 650; color: #0369a1;">${esc(s.feederName || '—')}</div>
+                    ${s.surveyDate ? `<div class="quiet" style="font-size: 10px;">${esc(formatDisplayDate(s.surveyDate))}</div>` : ''}
+                  </td>
+                  
+                  <td style="text-align: right; font-weight: 700; color: #0f172a;">${(Number(s.routeLength) || 0).toLocaleString('en-IN')}</td>
+                  <td style="text-align: right; font-weight: 600; color: #1e3a8a;">${(Number(s.cable400) || 0).toLocaleString('en-IN')}</td>
+                  <td style="text-align: right; font-weight: 600; color: #2563eb;">${(Number(s.cable185) || 0).toLocaleString('en-IN')}</td>
+
+                  <td style="text-align: center; font-weight: 600;">${Number(s.rmu3Way) || 0}</td>
+                  <td style="text-align: center; font-weight: 600;">${Number(s.rmu4Way) || 0}</td>
+                  <td>${renderDtrCell(s)}</td>
+
+                  <td style="text-align: center; font-weight: 600; color: #92400e;">${Number(s.termKit400) || 0}</td>
+                  <td style="text-align: center; font-weight: 600; color: #92400e;">${Number(s.termKit185) || 0}</td>
+
+                  <td style="text-align: right; font-weight: 600; color: #065f46;">${(Number(s.microTunneling) || 0).toLocaleString('en-IN')}</td>
+                  <td style="text-align: right;">${(Number(s.openCut) || 0).toLocaleString('en-IN')}</td>
+                  <td style="text-align: right;">${(Number(s.jackPush) || 0).toLocaleString('en-IN')}</td>
+                  <td style="text-align: right; font-weight: 600; color: #047857;">${(Number(s.hdpePipe) || 0).toLocaleString('en-IN')}</td>
+
+                  <td style="text-align: center;">${statusBadge}</td>
+                  <td style="text-align: center; white-space: nowrap;">
+                    ${canEdit ? `
+                      <button type="button" class="tiny" data-action="survey-edit-feeder" data-idx="${idx}" title="Edit Survey Record">Edit</button>
+                      <button type="button" class="tiny danger" data-action="survey-delete-feeder" data-idx="${idx}" title="Delete Survey Record">✕</button>
+                    ` : '<span class="quiet">—</span>'}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          ${surveys.length > 0 ? `
+            <tfoot>
+              <tr class="feeder-survey-foot">
+                <td colspan="3" style="text-align: right; font-weight: 800; letter-spacing: 0.03em;">TOTAL:</td>
+                <td style="text-align: right; font-weight: 800;">${totalRouteLength.toLocaleString('en-IN')} m</td>
+                <td style="text-align: right; font-weight: 800;">${totalCable400.toLocaleString('en-IN')} m</td>
+                <td style="text-align: right; font-weight: 800;">${totalCable185.toLocaleString('en-IN')} m</td>
+                <td style="text-align: center; font-weight: 800;">${totalRmu3}</td>
+                <td style="text-align: center; font-weight: 800;">${totalRmu4}</td>
+                <td style="font-size: 11px; font-weight: 700; color: #38bdf8;">${totalDtrNos > 0 ? `${totalDtrNos} Nos (${totalDtrKva.toLocaleString('en-IN')} kVA)` : '—'}</td>
+                <td style="text-align: center; font-weight: 800;">${totalKit400}</td>
+                <td style="text-align: center; font-weight: 800;">${totalKit185}</td>
+                <td style="text-align: right; font-weight: 800;">${totalHdd.toLocaleString('en-IN')} m</td>
+                <td style="text-align: right; font-weight: 800;">${totalOpenCut.toLocaleString('en-IN')} m</td>
+                <td style="text-align: right; font-weight: 800;">${totalJackPush.toLocaleString('en-IN')} m</td>
+                <td style="text-align: right; font-weight: 800;">${totalHdpe.toLocaleString('en-IN')} m</td>
+                <td style="text-align: center; font-weight: 700;">${completedCount}/${surveys.length} Done</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          ` : ''}
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 const GTP_WAITING = ['Submitted', 'Hold', 'Rejected'];
 
 function renderGtp() {
@@ -732,19 +1526,19 @@ function renderGtp() {
     let filteredRows = rows;
     let emptyMsg = 'No materials in this category.';
     if (gtpTab === 'not_submitted') {
-      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'not_submitted');
+      filteredRows = rows.filter((item) => itemMatchesGtpTab(item, 'not_submitted'));
       emptyMsg = 'No materials awaiting submission. All materials have been submitted or approved!';
     } else if (gtpTab === 'pending') {
-      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'pending');
+      filteredRows = rows.filter((item) => itemMatchesGtpTab(item, 'pending'));
       emptyMsg = 'No submissions currently pending approval. All caught up!';
     } else if (gtpTab === 'approved') {
-      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'approved');
+      filteredRows = rows.filter((item) => itemMatchesGtpTab(item, 'approved'));
       emptyMsg = 'No materials approved yet.';
     } else if (gtpTab === 'rejected') {
-      filteredRows = rows.filter((item) => itemApprovalStatus(item) === 'rejected');
+      filteredRows = rows.filter((item) => itemMatchesGtpTab(item, 'rejected'));
       emptyMsg = 'No materials rejected or on hold.';
     }
-    body = unifiedApprovalTable(filteredRows, emptyMsg);
+    body = unifiedApprovalTable(filteredRows, emptyMsg, gtpTab);
   }
 
   return `
@@ -789,16 +1583,24 @@ function renderGtp() {
   `;
 }
 
+function itemMatchesGtpTab(item, tab) {
+  const records = itemAllApprovals(item).filter((r) => r.status && r.status !== 'Pending Submission');
+  if (tab === 'all') return true;
+  if (tab === 'not_submitted') return records.length === 0;
+  if (tab === 'pending') return records.some((r) => r.status === 'Submitted');
+  if (tab === 'approved') return records.some((r) => r.status === 'Approved');
+  if (tab === 'rejected') return records.some((r) => r.status === 'Rejected' || r.status === 'Hold');
+  return true;
+}
+
 function gtpStats(rows) {
-  const stats = { notSubmitted: 0, pending: 0, approved: 0, rejected: 0, total: rows.length };
-  rows.forEach((item) => {
-    const st = itemApprovalStatus(item);
-    if (st === 'pending') stats.pending += 1;
-    else if (st === 'approved') stats.approved += 1;
-    else if (st === 'rejected') stats.rejected += 1;
-    else stats.notSubmitted += 1;
-  });
-  return stats;
+  return {
+    notSubmitted: rows.filter((item) => itemMatchesGtpTab(item, 'not_submitted')).length,
+    pending: rows.filter((item) => itemMatchesGtpTab(item, 'pending')).length,
+    approved: rows.filter((item) => itemMatchesGtpTab(item, 'approved')).length,
+    rejected: rows.filter((item) => itemMatchesGtpTab(item, 'rejected')).length,
+    total: rows.length
+  };
 }
 
 function gtpStat(label, value, tone, sub) {
@@ -837,12 +1639,12 @@ function itemApprovalStatus(item) {
   const records = itemAllApprovals(item).filter((r) => r.status && r.status !== 'Pending Submission');
   if (!records.length) return 'not_submitted';
   const hasPending = records.some((r) => r.status === 'Submitted');
-  const hasApproved = records.some((r) => r.status === 'Approved');
   const hasRejected = records.some((r) => r.status === 'Rejected' || r.status === 'Hold');
+  const hasApproved = records.some((r) => r.status === 'Approved');
 
   if (hasPending) return 'pending';
-  if (hasApproved) return 'approved';
   if (hasRejected) return 'rejected';
+  if (hasApproved) return 'approved';
   return 'not_submitted';
 }
 
@@ -906,7 +1708,7 @@ function lettersTable(groups) {
     const preview = names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2} more` : '');
     const days = group.pending ? daysSince(group.subDate) : null;
     let action = '';
-    if (canDecide && group.waiting) action = `<button type="button" class="tiny strong" data-action="open-letter" data-id="${esc(group.key)}">Review ${group.waiting}</button>`;
+    if (canDecide && group.pending) action = `<button type="button" class="tiny strong" data-action="open-letter" data-id="${esc(group.key)}">Review ${group.pending}</button>`;
     else action = `<button type="button" class="tiny" data-action="open-letter" data-id="${esc(group.key)}">View letter</button>`;
     return `
       <tr class="pick" data-action="open-letter" data-id="${esc(group.key)}" data-q="${esc([group.kind, group.letterNo, ...names, ...group.rows.map(({ record }) => `${record.vendor} ${record.memoNo}`)].join(' '))}">
@@ -925,7 +1727,7 @@ function approvalTable(rows, kind) {
   return unifiedApprovalTable(rows);
 }
 
-function unifiedApprovalTable(rows, emptyMsg = 'No items found.') {
+function unifiedApprovalTable(rows, emptyMsg = 'No items found.', tab = gtpTab) {
   const headers = [
     'Sl',
     'Material',
@@ -941,8 +1743,24 @@ function unifiedApprovalTable(rows, emptyMsg = 'No items found.') {
   ];
 
   return table(headers, rows.map((item) => {
-    const records = itemAllApprovals(item);
-    const primaryRecord = primaryApprovalRecord(item);
+    const allRecords = itemAllApprovals(item);
+    let records = allRecords;
+    if (tab === 'rejected') {
+      const filtered = allRecords.filter((r) => r.status === 'Rejected' || r.status === 'Hold');
+      if (filtered.length) records = filtered;
+    } else if (tab === 'pending') {
+      const filtered = allRecords.filter((r) => r.status === 'Submitted');
+      if (filtered.length) records = filtered;
+    } else if (tab === 'approved') {
+      const filtered = allRecords.filter((r) => r.status === 'Approved');
+      if (filtered.length) records = filtered;
+    }
+
+    const primaryRecord = records.find((r) => r.status === 'Approved')
+      || records.find((r) => r.status === 'Submitted')
+      || records.find((r) => r.status === 'Hold' || r.status === 'Rejected')
+      || records[0]
+      || blankApproval();
     const status = itemApprovalStatus(item);
 
     // Scope Badges
@@ -983,7 +1801,9 @@ function unifiedApprovalTable(rows, emptyMsg = 'No items found.') {
 
     // Quantities
     const appQty = approvedBoqQty(item);
-    const approvedQtyDisplay = appQty > 0 ? qtyText(appQty, item.unit) : '—';
+    const approvedQtyDisplay = (tab === 'all' || tab === 'approved' || records.some((r) => r.status === 'Approved')) && appQty > 0
+      ? qtyText(appQty, item.unit)
+      : '—';
 
     // Submission Dates
     let subDateHtml = '—';
@@ -1014,10 +1834,12 @@ function unifiedApprovalTable(rows, emptyMsg = 'No items found.') {
     let actionBtn = '';
     const canApprove = isRegion() || isAdmin();
     const canSubmit = isVendor() || isAdmin();
-    if (canApprove && status === 'pending') {
+    const hasPendingInTab = records.some((r) => r.status === 'Submitted');
+    const hasApprovedInTab = records.some((r) => r.status === 'Approved');
+    if (canApprove && hasPendingInTab) {
       actionBtn = `<button type="button" class="tiny strong" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}" data-mode="decision">Review</button>`;
-    } else if (canSubmit && status !== 'approved') {
-      actionBtn = `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="gtp_vendor" data-mode="submit">Submit</button>`;
+    } else if (canSubmit && !hasApprovedInTab && tab !== 'approved') {
+      actionBtn = `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}" data-mode="submit">Submit</button>`;
     } else {
       actionBtn = `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}">Details</button>`;
     }
@@ -1326,7 +2148,7 @@ function syncInspectDialog() {
   dialog.innerHTML = html;
   dialog.classList.toggle('wide', Boolean(
     (entryModal && entryModal.page === 'gtp' && (entryModal.mode === 'batch' || entryModal.mode === 'letter' || entryModal.mode === 'rectifyLetter')) ||
-    (entryModal && entryModal.page === 'contract') ||
+    (entryModal && (entryModal.page === 'contract' || entryModal.page === 'users')) ||
     (inspModal && (inspModal.mode === 'batch' || inspModal.mode === 'letter'))
   ));
   const batchForm = dialog.querySelector('#form-gtp-batch');
@@ -1693,8 +2515,9 @@ function prepareGtp(sl, id, mode) {
     return;
   }
   const records = itemAllApprovals(item);
-  const waitingRecord = records.find((r) => GTP_WAITING.includes(r.status));
+  const waitingRecord = records.find((r) => r.status === 'Submitted') || records.find((r) => GTP_WAITING.includes(r.status));
   const waiting = Boolean(waitingRecord);
+  const hasPending = records.some((r) => r.status === 'Submitted');
   const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(id) ? id : (waitingRecord?.kind || records[records.length - 1]?.kind || 'gtp_vendor');
   const canApprove = isRegion() || isAdmin();
   const canSubmit = isVendor() || isAdmin();
@@ -1706,7 +2529,7 @@ function prepareGtp(sl, id, mode) {
     const record = approvalRecord(item, kind);
     entryModal = batchEntry({ kind, picked: [item.slNo], letterNo: record.status === 'Rejected' ? '' : record.letterNo, vendor: record.vendor || '' });
     return;
-  } else if (canApprove && !isVendor() && waiting) {
+  } else if (canApprove && !isVendor() && hasPending) {
     modalMode = 'decision';
   } else if (isVendor() && !waiting && itemApprovalStatus(item) !== 'approved') {
     const record = approvalRecord(item, kind);
@@ -1768,6 +2591,7 @@ function prepareReceive(sl, id) {
 }
 
 function entryModalHtml() {
+  if (entryModal.page === 'users') return userPermissionsModal(people.find((p) => p.id === entryModal.id));
   if (entryModal.page === 'boq') return boqModal();
   if (entryModal.page === 'contract') return contractModal();
   if (entryModal.page === 'gtp') return gtpModal();
@@ -1865,6 +2689,162 @@ function contractModal() {
       </form>
     `;
   }
+
+  if (entryModal.mode === 'feederSurvey') {
+    const isEdit = entryModal.idx !== undefined && entryModal.idx !== null && entryModal.idx >= 0;
+    const s = isEdit ? (contract.feederSurveys[entryModal.idx] || {}) : {};
+    const dtrCounts = s.dtrCounts || {};
+    const dtr100 = dtrCounts['100'] ?? extractDtrQty(s.dtrDetails, '100');
+    const dtr160 = dtrCounts['160'] ?? extractDtrQty(s.dtrDetails, '160');
+    const dtr250 = dtrCounts['250'] ?? extractDtrQty(s.dtrDetails, '250');
+    const dtr315 = dtrCounts['315'] ?? extractDtrQty(s.dtrDetails, '315');
+    const dtr500 = dtrCounts['500'] ?? extractDtrQty(s.dtrDetails, '500');
+    const dtr630 = dtrCounts['630'] ?? extractDtrQty(s.dtrDetails, '630');
+
+    return `
+      ${modalTitle(isEdit ? 'Edit Feeder Survey Record' : 'Add Feeder Survey Record', 'Feeder-wise joint survey measurements entered and verified by Divisional Engineer / WBSEDCL.')}
+      <form class="entry entry-plain" id="form-feeder-survey" style="max-width: 780px;">
+        <input type="hidden" name="idx" value="${isEdit ? entryModal.idx : -1}" />
+        
+        <div style="grid-column: 1 / -1; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11.5px; color: #334155; text-transform: uppercase; letter-spacing: 0.04em;">
+          1. Substation & Feeder Identification
+        </div>
+        <label>Name of Substation (SS) *
+          <input name="ssName" required value="${esc(s.ssName || '')}" list="ss-list" placeholder="e.g. English Bazar 33/11kV Substation" />
+          <datalist id="ss-list">
+            <option value="English Bazar 33/11kV Substation">
+            <option value="KPS 33/11kV Substation">
+            <option value="Mokdumpur 33/11kV Substation">
+            <option value="Malda Town 33/11kV Substation">
+          </datalist>
+        </label>
+        <label>Name of Feeder *
+          <input name="feederName" required value="${esc(s.feederName || '')}" list="feeder-list" placeholder="e.g. English Bazar Feeder-1 (Rabindra Avenue)" />
+          <datalist id="feeder-list">
+            ${FEEDERS.map((f) => `<option value="${esc(f)}">`).join('')}
+          </datalist>
+        </label>
+        <label>Survey Status
+          <select name="status">
+            <option${s.status === 'Completed' ? ' selected' : ''}>Completed</option>
+            <option${s.status === 'In Progress' || !s.status ? ' selected' : ''}>In Progress</option>
+            <option${s.status === 'Under Survey' ? ' selected' : ''}>Under Survey</option>
+            <option${s.status === 'Approved' ? ' selected' : ''}>Approved</option>
+          </select>
+        </label>
+        <label>Joint Survey Date
+          <input name="surveyDate" type="date" value="${esc(s.surveyDate || '')}" />
+        </label>
+
+        <div style="grid-column: 1 / -1; margin-top: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11.5px; color: #334155; text-transform: uppercase; letter-spacing: 0.04em;">
+          2. Route Length & HT Cables (Laying Lengths)
+        </div>
+        <label>Total Route Length (R/L) (m) *
+          <input name="routeLength" type="number" step="any" min="0" required value="${esc(s.routeLength || '')}" placeholder="e.g. 3850" />
+        </label>
+        <label>Length of Cable 400 sq.mm (m)
+          <input name="cable400" type="number" step="any" min="0" value="${esc(s.cable400 || '')}" placeholder="e.g. 1200" />
+        </label>
+        <label>Length of Cable 185 sq.mm (m)
+          <input name="cable185" type="number" step="any" min="0" value="${esc(s.cable185 || '')}" placeholder="e.g. 3100" />
+        </label>
+
+        <div style="grid-column: 1 / -1; margin-top: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11.5px; color: #334155; text-transform: uppercase; letter-spacing: 0.04em;">
+          3. SCADA RMUs & Termination Kits
+        </div>
+        <label>3-Way RMU (Nos)
+          <input name="rmu3Way" type="number" min="0" value="${esc(s.rmu3Way || '')}" placeholder="0" />
+        </label>
+        <label>4-Way RMU (Nos)
+          <input name="rmu4Way" type="number" min="0" value="${esc(s.rmu4Way || '')}" placeholder="0" />
+        </label>
+        <label>Termination Kit 400 sq.mm (Sets)
+          <input name="termKit400" type="number" min="0" value="${esc(s.termKit400 || '')}" placeholder="0" />
+        </label>
+        <label>Termination Kit 185 sq.mm (Sets)
+          <input name="termKit185" type="number" min="0" value="${esc(s.termKit185 || '')}" placeholder="0" />
+        </label>
+
+        <!-- Capacity-wise Clean DTR Entry Section -->
+        <div style="grid-column: 1 / -1; margin-top: 6px;" class="dtr-capacity-box">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+            <div style="font-weight: 750; font-size: 12px; color: #0f172a; display: flex; align-items: center; gap: 5px;">
+              <span>⚡</span> Distribution Transformers (DTR) — Capacity-wise Clean Input
+            </div>
+            <span class="quiet" style="font-size: 11px;">Enter quantity (Nos) against each transformer capacity</span>
+          </div>
+
+          <div class="dtr-capacity-grid">
+            <div class="dtr-cap-card">
+              <span class="dtr-cap-label">100 kVA</span>
+              <input class="dtr-cap-input" type="number" name="dtr_100" min="0" step="1" value="${esc(dtr100)}" placeholder="0" />
+            </div>
+            <div class="dtr-cap-card">
+              <span class="dtr-cap-label">160 kVA</span>
+              <input class="dtr-cap-input" type="number" name="dtr_160" min="0" step="1" value="${esc(dtr160)}" placeholder="0" />
+            </div>
+            <div class="dtr-cap-card">
+              <span class="dtr-cap-label">250 kVA</span>
+              <input class="dtr-cap-input" type="number" name="dtr_250" min="0" step="1" value="${esc(dtr250)}" placeholder="0" />
+            </div>
+            <div class="dtr-cap-card">
+              <span class="dtr-cap-label">315 kVA</span>
+              <input class="dtr-cap-input" type="number" name="dtr_315" min="0" step="1" value="${esc(dtr315)}" placeholder="0" />
+            </div>
+            <div class="dtr-cap-card">
+              <span class="dtr-cap-label">500 kVA</span>
+              <input class="dtr-cap-input" type="number" name="dtr_500" min="0" step="1" value="${esc(dtr500)}" placeholder="0" />
+            </div>
+            <div class="dtr-cap-card">
+              <span class="dtr-cap-label">630 kVA</span>
+              <input class="dtr-cap-input" type="number" name="dtr_630" min="0" step="1" value="${esc(dtr630)}" placeholder="0" />
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+            <label style="font-size: 11px; font-weight: 600; color: #475569;">Other DTR Rating / Custom Capacity (Optional)
+              <input type="text" name="dtr_other" value="${esc(s.dtrOther || '')}" placeholder="e.g. 63 kVA (1 No), 1000 kVA (1 No)" style="font-size: 12px; margin-top: 2px;" />
+            </label>
+            <label style="font-size: 11px; font-weight: 600; color: #475569;">DTR Plinth / Mounting Remarks (Optional)
+              <input type="text" name="dtr_notes" value="${esc(s.dtrNotes || '')}" placeholder="e.g. Compact Substation (CSS) / Plinth" style="font-size: 12px; margin-top: 2px;" />
+            </label>
+          </div>
+        </div>
+
+        <div style="grid-column: 1 / -1; margin-top: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11.5px; color: #334155; text-transform: uppercase; letter-spacing: 0.04em;">
+          4. Trenching, Laying Methods & HDPE Pipes (Lengths)
+        </div>
+        <label>Micro-tunneling / HDD (m)
+          <input name="microTunneling" type="number" step="any" min="0" value="${esc(s.microTunneling || '')}" placeholder="e.g. 2100" />
+        </label>
+        <label>Open-Cut Trenching (m)
+          <input name="openCut" type="number" step="any" min="0" value="${esc(s.openCut || '')}" placeholder="e.g. 1450" />
+        </label>
+        <label>JackPush Length (m)
+          <input name="jackPush" type="number" step="any" min="0" value="${esc(s.jackPush || '')}" placeholder="e.g. 300" />
+        </label>
+        <label>HDPE Pipes Length (m)
+          <input name="hdpePipe" type="number" step="any" min="0" value="${esc(s.hdpePipe || '')}" placeholder="e.g. 4300" />
+        </label>
+
+        <div style="grid-column: 1 / -1; margin-top: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11.5px; color: #334155; text-transform: uppercase; letter-spacing: 0.04em;">
+          5. Divisional Representative & Remarks
+        </div>
+        <label>Divisional Surveyor / Engineer
+          <input name="surveyorName" value="${esc(s.surveyorName || (user.name ? `${user.name} (${user.role})` : ''))}" placeholder="e.g. Er. S. Roy (AE, Malda Division)" />
+        </label>
+        <label class="span-2">Survey Remarks / Route Observations
+          <input name="remarks" value="${esc(s.remarks || '')}" placeholder="e.g. Traffic permission required at Rathbari, RoW cleared" />
+        </label>
+
+        <div class="actions" style="grid-column: 1 / -1; margin-top: 8px;">
+          <button class="primary" type="submit">${isEdit ? 'Update Feeder Survey' : 'Save Feeder Survey'}</button>
+          <button class="ghost" type="button" data-action="close-modal">Cancel</button>
+        </div>
+        <p class="form-msg span-all"></p>
+      </form>
+    `;
+  }
   return '';
 }
 
@@ -1910,7 +2890,9 @@ function boqFields(item) {
     <label>LOA qty <input name="loa" type="number" min="0" step="any" required value="${item ? esc(item.loaQty) : ''}" /></label>
     <label class="span-2">Description <input name="description" required value="${item ? esc(item.description) : ''}" /></label>
     <label>Survey qty <input name="survey" type="number" min="0" step="any" placeholder="Later" value="${surveyValue(item)}" /></label>
-    <label>Rate (₹) <input name="rate" type="number" min="0" step="any" required value="${item ? esc(item.rate) : ''}" /></label>
+    <label>Rate (₹) <input name="rate" type="number" min="0" step="any" required value="${item ? esc(item.rate) : ''}" placeholder="0 for erection-supplied items" />
+      <span class="quiet" style="font-size:11px; display:block; margin-top:2px;">Enter 0 if material is supplied within Erection schedule charges / extra scope</span>
+    </label>
   `;
 }
 
@@ -2079,7 +3061,7 @@ function gtpLetterModal() {
   const group = findGroup(entryModal.id);
   if (entryModal?.mode === 'rectifyLetter') return gtpRectifyLetterModal(group);
   if (!group) return `${modalTitle('Letter not found', 'It may have been re-submitted under a new reference.')}`;
-  const canDecide = (isRegion() || isAdmin()) && group.waiting > 0;
+  const canDecide = (isRegion() || isAdmin()) && group.pending > 0;
   const canSubmit = isVendor() || isAdmin();
   const sub = `${kindLabel(group.kind)} · Submitted ${group.subDate ? isoToDmy(group.subDate) : '—'} · ${group.rows.length} ${group.rows.length === 1 ? 'material' : 'materials'}`;
   const canDeleteLetter = isAdmin() && group.rows.every(({ record }) => record.status !== 'Approved');
@@ -2215,7 +3197,7 @@ function letterDecisionForm(group) {
 
 function gtpDecisionForm(item, kind) {
   const records = itemApprovals(item, kind);
-  const waitingRecord = records.find((r) => GTP_WAITING.includes(r.status)) || approvalRecord(item, kind);
+  const waitingRecord = records.find((r) => r.status === 'Submitted') || records.find((r) => GTP_WAITING.includes(r.status)) || approvalRecord(item, kind);
   const defaultVendor = waitingRecord.vendor || approvalRecord(item, 'vendor').vendor || '';
   const defaultLetter = waitingRecord.letterNo || '';
   return `
@@ -2804,7 +3786,7 @@ function onClick(event) {
     const tab = button.dataset.tab;
     const group = button.dataset.group;
     if (group === 'boq') {
-      boqTab = ['overview', 'material', 'erection'].includes(tab) ? tab : 'overview';
+      boqTab = ['overview', 'survey', 'material', 'erection'].includes(tab) ? tab : 'overview';
       if (tab === 'erection') boqPart = 'Part-B (Erection)';
       else if (tab === 'material') boqPart = 'Part-A (Material)';
     }
@@ -3100,6 +4082,27 @@ function onClick(event) {
     deleteContractEot(Number(button.dataset.idx));
     return;
   }
+  if (action === 'survey-add-feeder') {
+    if (!isDivision() && !isRegion() && !isAdmin()) return;
+    entryModal = { page: 'contract', mode: 'feederSurvey', idx: -1 };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'survey-edit-feeder') {
+    if (!isDivision() && !isRegion() && !isAdmin()) return;
+    const idx = Number(button.dataset.idx);
+    entryModal = { page: 'contract', mode: 'feederSurvey', idx };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'survey-delete-feeder') {
+    if (!isDivision() && !isRegion() && !isAdmin()) return;
+    const idx = Number(button.dataset.idx);
+    deleteFeederSurvey(idx);
+    return;
+  }
   if (action === 'auth-mode') {
     authMode = button.dataset.mode === 'signup' ? 'signup' : 'login';
     paint();
@@ -3107,6 +4110,49 @@ function onClick(event) {
   if (action === 'sign-out') remote.signOut();
   if (action === 'save-person') savePerson(button.dataset.id);
   if (action === 'reset-pin') resetUserPin(button.dataset.id, button.dataset.name);
+  if (action === 'edit-user-perms') {
+    if (!can('users_manage') && user.role !== 'Admin') return;
+    entryModal = { page: 'users', mode: 'permissions', id: button.dataset.id };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'perm-preset') {
+    const preset = button.dataset.preset;
+    const modalForm = document.getElementById('form-user-permissions');
+    if (!modalForm) return;
+    let targetPerms = {};
+    if (preset === 'all') {
+      PERMISSION_DEFS.forEach((d) => { targetPerms[d.key] = true; });
+    } else if (preset === 'none') {
+      PERMISSION_DEFS.forEach((d) => { targetPerms[d.key] = false; });
+    } else {
+      targetPerms = ROLE_DEFAULT_PERMISSIONS[preset] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+    }
+    let count = 0;
+    PERMISSION_DEFS.forEach((def) => {
+      const input = modalForm.elements[`perm_${def.key}`];
+      if (input) {
+        input.checked = Boolean(targetPerms[def.key]);
+        if (input.checked) count++;
+        const card = input.closest('.perm-toggle-card');
+        if (card) {
+          if (input.checked) {
+            card.classList.add('active');
+            card.style.borderColor = '#2563eb';
+            card.style.background = '#eff6ff';
+          } else {
+            card.classList.remove('active');
+            card.style.borderColor = '#e2e8f0';
+            card.style.background = '#ffffff';
+          }
+        }
+      }
+    });
+    const counter = document.getElementById('perm-counter');
+    if (counter) counter.textContent = `${count} of 12 Authorizations Enabled`;
+    return;
+  }
   if (action === 'fill-demo') {
     const email = button.dataset.email;
     const pass = button.dataset.pass;
@@ -3139,9 +4185,11 @@ function onSubmit(event) {
   if (form.id === 'form-login') signIn(form);
   if (form.id === 'form-signup') signUp(form);
   if (form.id === 'form-create-user') createUserAccount(form);
+  if (form.id === 'form-user-permissions') saveUserPermissions(form);
   if (form.id === 'form-contract-milestones') saveContractMilestones(form);
   if (form.id === 'form-contract-bg') saveContractBg(form);
   if (form.id === 'form-contract-eot') saveContractEot(form);
+  if (form.id === 'form-feeder-survey') saveFeederSurvey(form);
   if (form.id === 'form-rectify-letter') saveRectifyLetter(form);
   if (form.id === 'form-boq') saveBoq(form);
   if (form.id === 'form-gtp-batch') {
@@ -3215,6 +4263,42 @@ function rejectInvoiceQty(input) {
 }
 
 function onChange(event) {
+  if (event.target.classList.contains('perm-switch')) {
+    const card = event.target.closest('.perm-toggle-card');
+    if (card) {
+      if (event.target.checked) {
+        card.classList.add('active');
+        card.style.borderColor = '#2563eb';
+        card.style.background = '#eff6ff';
+      } else {
+        card.classList.remove('active');
+        card.style.borderColor = '#e2e8f0';
+        card.style.background = '#ffffff';
+      }
+    }
+    const modalForm = document.getElementById('form-user-permissions');
+    if (modalForm) {
+      let count = 0;
+      PERMISSION_DEFS.forEach((def) => {
+        if (modalForm.elements[`perm_${def.key}`]?.checked) count++;
+      });
+      const counter = document.getElementById('perm-counter');
+      if (counter) counter.textContent = `${count} of 12 Authorizations Enabled`;
+    }
+    return;
+  }
+  if (event.target.id === 'new-user-role') {
+    const preset = event.target.value;
+    const form = event.target.closest('form');
+    if (form) {
+      const defaults = ROLE_DEFAULT_PERMISSIONS[preset] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+      PERMISSION_DEFS.forEach((def) => {
+        const input = form.elements[`perm_${def.key}`];
+        if (input) input.checked = Boolean(defaults[def.key]);
+      });
+    }
+    return;
+  }
   if (event.target.id === 'select-activity-type') {
     const customWrap = document.getElementById('custom-activity-wrapper');
     if (customWrap) customWrap.hidden = event.target.value !== 'Other';
@@ -3359,7 +4443,7 @@ async function signUp(form) {
 }
 
 async function savePerson(id) {
-  if (user.role !== 'Admin') return;
+  if (!can('users_manage') && user.role !== 'Admin') return;
   const role = document.querySelector(`[data-person="${CSS.escape(id)}"][data-field="role"]`)?.value;
   const active = document.querySelector(`[data-person="${CSS.escape(id)}"][data-field="active"]`)?.value === 'Active';
   if (!role) return;
@@ -3379,12 +4463,38 @@ async function savePerson(id) {
     user.active = active;
     if (!user.active || !canOpen(currentPage)) currentPage = 'home';
   }
-  toast('Person saved');
+  toast('User access updated');
   paint();
 }
 
+async function saveUserPermissions(form) {
+  if (!can('users_manage') && user.role !== 'Admin') return;
+  const id = form.dataset.id;
+  const permissions = {};
+  PERMISSION_DEFS.forEach((def) => {
+    const input = form.elements[`perm_${def.key}`];
+    permissions[def.key] = input ? input.checked : false;
+  });
+
+  try {
+    await remote.saveProfile(id, { permissions });
+    const person = people.find((p) => p.id === id);
+    if (person) {
+      person.permissions = permissions;
+    }
+    if (sessionUser?.id === id) {
+      user.permissions = permissions;
+    }
+    entryModal = null;
+    toast('Custom authorizations updated successfully');
+    paint();
+  } catch (err) {
+    toast(err.message || 'Failed to update authorizations');
+  }
+}
+
 async function createUserAccount(form) {
-  if (user.role !== 'Admin') return;
+  if (!can('users_manage') && user.role !== 'Admin') return;
   const name = field(form, 'name');
   const userId = field(form, 'userId');
   const pin = field(form, 'pin');
@@ -3394,11 +4504,17 @@ async function createUserAccount(form) {
     return setMsg(form, 'Please enter Full Name, User ID, and PIN.');
   }
 
+  const permissions = {};
+  PERMISSION_DEFS.forEach((def) => {
+    const input = form.elements[`perm_${def.key}`];
+    permissions[def.key] = input ? input.checked : false;
+  });
+
   try {
     setMsg(form, 'Creating user account…');
-    await remote.createAdminUser(name, userId, pin, role, true);
+    await remote.createAdminUser(name, userId, pin, role, true, permissions);
     setMsg(form, '');
-    toast(`User account "${name}" created!`);
+    toast(`User account "${name}" created with custom authorizations!`);
     await pullRegister();
     paint();
   } catch (error) {
@@ -3407,7 +4523,7 @@ async function createUserAccount(form) {
 }
 
 async function resetUserPin(id, name) {
-  if (user.role !== 'Admin') return;
+  if (!can('users_manage') && user.role !== 'Admin') return;
   const newPin = prompt(`Enter new PIN or Password for ${name || 'user'}:`);
   if (!newPin || !newPin.trim()) return;
 
@@ -3988,9 +5104,13 @@ async function saveDecision(form) {
   if (!requireName(form)) return;
 
   const records = itemApprovals(item, kind);
-  const record = records.find((r) => GTP_WAITING.includes(r.status)) || approvalRecord(item, kind);
+  const letterNoInput = field(form, 'letterNo');
+  const record = (letterNoInput ? records.find((r) => r.letterNo === letterNoInput) : null)
+    || records.find((r) => r.status === 'Submitted')
+    || records.find((r) => GTP_WAITING.includes(r.status))
+    || approvalRecord(item, kind);
   const vendor = field(form, 'vendor') || record.vendor || approvalRecord(item, 'vendor').vendor || '';
-  const letterNo = field(form, 'letterNo') || record.letterNo || '';
+  const letterNo = letterNoInput || record.letterNo || '';
 
   const payload = {
     itemSl: item.slNo,
@@ -4531,6 +5651,123 @@ async function deleteContractEot(idx) {
   }
 }
 
+async function saveFeederSurvey(form) {
+  if (!isDivision() && !isRegion() && !isAdmin()) return;
+  const idx = Number(field(form, 'idx'));
+  const contract = { ...(contractData || defaultContract()) };
+  const list = [...(contract.feederSurveys || [])];
+
+  const ssName = field(form, 'ssName');
+  const feederName = field(form, 'feederName');
+  const routeLength = Number(field(form, 'routeLength')) || 0;
+
+  if (!ssName || !feederName || !routeLength) {
+    return setMsg(form, 'Please enter Substation Name, Feeder Name, and Total Route Length.');
+  }
+
+  // Capacity-wise DTR inputs
+  const dtr100 = Math.max(0, parseInt(field(form, 'dtr_100'), 10) || 0);
+  const dtr160 = Math.max(0, parseInt(field(form, 'dtr_160'), 10) || 0);
+  const dtr250 = Math.max(0, parseInt(field(form, 'dtr_250'), 10) || 0);
+  const dtr315 = Math.max(0, parseInt(field(form, 'dtr_315'), 10) || 0);
+  const dtr500 = Math.max(0, parseInt(field(form, 'dtr_500'), 10) || 0);
+  const dtr630 = Math.max(0, parseInt(field(form, 'dtr_630'), 10) || 0);
+  const dtrOther = (field(form, 'dtr_other') || '').trim();
+  const dtrNotes = (field(form, 'dtr_notes') || '').trim();
+
+  const dtrCounts = {};
+  if (dtr100 > 0) dtrCounts['100'] = dtr100;
+  if (dtr160 > 0) dtrCounts['160'] = dtr160;
+  if (dtr250 > 0) dtrCounts['250'] = dtr250;
+  if (dtr315 > 0) dtrCounts['315'] = dtr315;
+  if (dtr500 > 0) dtrCounts['500'] = dtr500;
+  if (dtr630 > 0) dtrCounts['630'] = dtr630;
+
+  const totalDtrNos = dtr100 + dtr160 + dtr250 + dtr315 + dtr500 + dtr630;
+  const totalDtrKva = (dtr100 * 100) + (dtr160 * 160) + (dtr250 * 250) + (dtr315 * 315) + (dtr500 * 500) + (dtr630 * 630);
+
+  const dtrParts = [];
+  if (dtr630 > 0) dtrParts.push(`630 kVA (${dtr630})`);
+  if (dtr500 > 0) dtrParts.push(`500 kVA (${dtr500})`);
+  if (dtr315 > 0) dtrParts.push(`315 kVA (${dtr315})`);
+  if (dtr250 > 0) dtrParts.push(`250 kVA (${dtr250})`);
+  if (dtr160 > 0) dtrParts.push(`160 kVA (${dtr160})`);
+  if (dtr100 > 0) dtrParts.push(`100 kVA (${dtr100})`);
+  if (dtrOther) dtrParts.push(dtrOther);
+
+  let dtrDetails = dtrParts.join(', ');
+  if (totalDtrNos > 0 && dtrParts.length > 1) {
+    dtrDetails += ` · Total: ${totalDtrNos} Nos (${totalDtrKva} kVA)`;
+  }
+
+  const entry = {
+    id: idx >= 0 && list[idx]?.id ? list[idx].id : uid('FS'),
+    ssName,
+    feederName,
+    routeLength,
+    cable400: Number(field(form, 'cable400')) || 0,
+    cable185: Number(field(form, 'cable185')) || 0,
+    rmu3Way: Number(field(form, 'rmu3Way')) || 0,
+    rmu4Way: Number(field(form, 'rmu4Way')) || 0,
+    dtrCounts,
+    dtrOther,
+    dtrNotes,
+    dtrTotalNos: totalDtrNos,
+    dtrTotalKva,
+    dtrDetails: dtrDetails || '—',
+    termKit400: Number(field(form, 'termKit400')) || 0,
+    termKit185: Number(field(form, 'termKit185')) || 0,
+    microTunneling: Number(field(form, 'microTunneling')) || 0,
+    openCut: Number(field(form, 'openCut')) || 0,
+    jackPush: Number(field(form, 'jackPush')) || 0,
+    hdpePipe: Number(field(form, 'hdpePipe')) || 0,
+    status: field(form, 'status') || 'In Progress',
+    surveyDate: field(form, 'surveyDate') || cleanDate(new Date().toISOString()),
+    surveyorName: field(form, 'surveyorName') || '',
+    remarks: field(form, 'remarks') || ''
+  };
+
+  if (idx >= 0 && idx < list.length) {
+    list[idx] = entry;
+  } else {
+    list.push(entry);
+  }
+
+  contract.feederSurveys = list;
+  contract.updatedBy = user.name || effectiveRole();
+
+  try {
+    setMsg(form, 'Saving Feeder Survey…');
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    entryModal = null;
+    toast(idx >= 0 ? 'Feeder survey updated' : 'Feeder survey added');
+    paint();
+  } catch (err) {
+    setMsg(form, err.message || 'Could not save survey');
+  }
+}
+
+async function deleteFeederSurvey(idx) {
+  if (!isDivision() && !isRegion() && !isAdmin()) return;
+  const contract = { ...(contractData || defaultContract()) };
+  const list = [...(contract.feederSurveys || [])];
+  const s = list[idx];
+  if (!s) return;
+  if (!confirm(`Delete survey record for "${s.feederName}"?`)) return;
+  list.splice(idx, 1);
+  contract.feederSurveys = list;
+  contract.updatedBy = user.name || effectiveRole();
+  try {
+    await remote.saveContractOverview(contract);
+    await pullRegister();
+    toast('Feeder survey deleted');
+    paint();
+  } catch (err) {
+    toast(err.message || 'Could not delete survey');
+  }
+}
+
 async function verifyLog(id) {
   if (!isRegion() && !isAdmin()) return;
   const log = dailyLogs.find((row) => row.id === id);
@@ -4815,7 +6052,14 @@ function billLeft(item) {
 }
 
 function canOpen(pageId) {
-  if (pageId === 'boq' && boqTab === 'overview') return true;
+  if (pageId === 'home') return true;
+  if (pageId === 'boq') return true;
+  if (pageId === 'gtp') return can('gtp_submit') || can('gtp_approve') || user.role === 'Viewer' || isAdmin();
+  if (pageId === 'di') return can('di_offer') || can('di_issue') || user.role === 'Viewer' || isAdmin();
+  if (pageId === 'receive') return can('receive_record') || user.role === 'Viewer' || isAdmin();
+  if (pageId === 'billing') return can('billing_submit') || can('billing_pay') || user.role === 'Viewer' || isAdmin();
+  if (pageId === 'daily') return can('daily_log') || can('daily_verify') || user.role === 'Viewer' || isAdmin();
+  if (pageId === 'users') return can('users_manage') || isAdmin();
   return (ROLE_PAGES[effectiveRole()] || ROLE_PAGES.Turnkey).includes(pageId);
 }
 
@@ -4841,7 +6085,7 @@ function kpi(label, value, sub, action = '') {
   `;
 }
 
-function table(headers, rows, cols, emptyText = 'No records yet.') {
+function table(headers, rows, cols, emptyText = 'No records yet.', footerHtml = '') {
   const body = rows.length
     ? rows.join('') + `<tr class="filter-empty" hidden><td class="empty" colspan="${cols}">No match.</td></tr>`
     : `<tr><td class="empty" colspan="${cols}">${esc(emptyText)}</td></tr>`;
@@ -4850,11 +6094,13 @@ function table(headers, rows, cols, emptyText = 'No records yet.') {
     const label = numeric ? header.label : header;
     return `<th${numeric ? ' class="num"' : ''}>${esc(label)}</th>`;
   }).join('');
+  const foot = footerHtml ? `<tfoot>${footerHtml}</tfoot>` : '';
   return `
     <div class="table-wrap">
       <table>
         <thead><tr>${head}</tr></thead>
         <tbody>${body}</tbody>
+        ${foot}
       </table>
     </div>
   `;
@@ -5117,6 +6363,64 @@ function formatMoney(value) {
   if (Math.abs(amount) >= 1e7) return formatCr(amount);
   if (Math.abs(amount) >= 1e5) return `₹${(amount / 1e5).toFixed(2)} L`;
   return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
+
+function formatInr(value, decimals = 2) {
+  const amount = Number(value) || 0;
+  return '₹' + amount.toLocaleString('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
+function numberToIndianWords(amount) {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function convertTwoDigits(n) {
+    if (n < 20) return ones[n];
+    const t = Math.floor(n / 10);
+    const r = n % 10;
+    return tens[t] + (r > 0 ? ' ' + ones[r] : '');
+  }
+
+  function convertThreeDigits(n) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    let res = '';
+    if (h > 0) res += ones[h] + ' Hundred';
+    if (r > 0) res += (res ? ' ' : '') + convertTwoDigits(r);
+    return res;
+  }
+
+  const rounded = Number(amount || 0).toFixed(2);
+  const parts = rounded.split('.');
+  let num = parseInt(parts[0], 10);
+  const paise = parseInt(parts[1], 10);
+
+  if (num === 0 && paise === 0) return 'Rupees Zero Only';
+
+  const crore = Math.floor(num / 10000000);
+  num %= 10000000;
+  const lakh = Math.floor(num / 100000);
+  num %= 100000;
+  const thousand = Math.floor(num / 1000);
+  num %= 1000;
+  const hundred = num;
+
+  const result = [];
+  if (crore > 0) result.push(convertThreeDigits(crore) + ' Crore');
+  if (lakh > 0) result.push(convertThreeDigits(lakh) + ' Lakh');
+  if (thousand > 0) result.push(convertThreeDigits(thousand) + ' Thousand');
+  if (hundred > 0) result.push(convertThreeDigits(hundred));
+
+  let str = 'Rupees ' + (result.join(' ') || 'Zero');
+  if (paise > 0) {
+    str += ' and ' + convertTwoDigits(paise) + ' Paise';
+  }
+  str += ' Only';
+  return str;
 }
 
 function esc(value) {

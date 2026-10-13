@@ -171,6 +171,11 @@ The GTP/Vendor page features dedicated status filter tabs:
 
 The top 4 KPI metric cards reflect the active counts across these 4 status categories and are clickable to immediately switch views.
 
+**Multi-Submission & Replacement Logic**:
+A BOQ material can have multiple approval submissions across different letters (for instance, an initial vendor submission was rejected due to debarment or technical non-compliance, followed by a subsequent letter proposing an alternative vendor).
+- The **Rejected** tab filters materials that have any record with `status = 'Rejected'` or `'Hold'`. Such materials are always visible here and counted in the *Rejected / Hold* KPI card so rejection history and debarment memos remain accessible.
+- If the material also has an active replacement letter awaiting decision (`status = 'Submitted'`), it will simultaneously appear on the **Pending Approval** tab so WBSEDCL engineers can review and decide on the new proposal without losing sight of the rejection.
+
 ### 6.4 Decision Lifecycle & Safe Reset Tools
 - **Approving / Rejecting**: Region and Admin users enter WBSEDCL memo reference number, decision date, and remarks.
 - **Admin Reset Tool**:
@@ -214,6 +219,55 @@ PRIMARY KEY (item_sl, kind, letter_no);
   - Add, edit, or delete Bank Guarantees (`bg_entries`)
   - Add, edit, or delete Time Extension (EOT) revisions (`eot_entries`)
 - **Read-Only Roles**: Vendors and Viewers can see all milestone data and status badges in real-time, but modification actions are hidden and blocked by RLS policies (`project_contract_update`).
+
+### 7.4 BOQ Material & Erection Schedules: Total Cost & LOA Summary
+- **Total Cost Column**: Both Material (Part-A) and Erection (Part-B) schedule tables display a dedicated **`Total Cost (₹)`** column (`LOA Qty × Quoted Rate`), formatted using Indian currency delimiters via `formatInr()`.
+- **In-Table Subtotal Footer (`<tfoot>`)**: A sticky bottom row within the table displaying the active schedule subtotal (`Total of Part-A` or `Total of Part-B`) and executed value.
+- **Two Distinct Material Groups in Part-A**:
+  1. **Group 1: Part-A LOA Baseline Material Schedule (Supply & Delivery Items)**: The 15 official BOQ material items with quoted contract rates, totalling **₹20,22,46,617.70** baseline.
+  2. **Group 2: Items Part of Erection Schedule (Supplied within Erection Charges / Extra Items)**: Materials added by Admin with **₹0 cost** (e.g. HDPE pipes, cable markers, or earthing accessories). These items are tracked for vendor approval, inspection, and site delivery, but carry ₹0 direct material supply charges because their supply costs are paid under the Erection Schedule (Part-B). They are presented in a dedicated table under a clean, distinct amber header with badge indicators (`₹0.00 LOA Material Cost`, `Supplied within Erection Charges`).
+- **Official LOA Summary Section (at the bottom)**: Below the items table, a comprehensive contract breakdown renders the baseline financial figures as per the WBSEDCL Letter of Award (LOA No. 5301083425 / `SOW Malda UG.xlsx`):
+  - **Part-A (Material Schedule Baseline)**: 15 line items, ₹20,22,46,617.70 (64.94% share of baseline).
+  - **Part-A (Erection-Supplied Items)**: Tracked items with ₹0.00 direct material charge.
+  - **Part-B (Erection Schedule)**: 21 line items, ₹10,91,71,572.82 (35.06% share of baseline).
+  - **Total Amount Excluding GST (Total in Figures)**: ₹31,14,18,190.52 (31.14 Cr).
+  - **Statutory Taxes (GST @ 18%)**: ₹5,60,55,274.29 (5.61 Cr).
+  - **Total Contract Order Value (Including 18% GST)**: ₹36,74,73,464.81 (36.75 Cr).
+  - **Amount in Words Transcription**: Exact LOA contractual transcription dynamically generated via `numberToIndianWords()` (*Rupees Thirty One Crore Fourteen Lakh Eighteen Thousand One Hundred Ninety and Fifty Two Paise Only* excluding GST, and with 18% GST).
+
+### 7.5 Tabulated Overview Page & Post-Survey Variation Architecture
+- **Compact & Tabulated Executive Dashboard**: The BOQ Overview page (`renderBoqOverview`) is organized into high-density, tabulated cards:
+  1. **Executive Cost Summary & Survey Variation Tracking**: Cost-focused tabulated breakdown structured directly as per the LOA baseline:
+     - **LOA Baseline Columns**: `Schedule Component (as per LOA)`, `Items`, `LOA Share (%)`, and `LOA Baseline Cost (₹)`.
+     - **Post-Survey & Variation Columns**: `Post-Survey Cost (₹)`, `Cost Variation (₹)`, and `Variation (%)`.
+     - **Pending Survey Status**: Because the WBSEDCL joint route survey is currently in progress, the post-survey cost and variation columns are structured with dedicated styling (`.survey-col`, `.survey-col-start`) and kept **blank / "Yet to finalize"** as per the official LOA baseline. Once joint survey measurements are approved, the post-survey quantities and resulting cost deviations will populate directly into these columns.
+     - **Full Contract Reconciliation**: Tabulates Part-A Material (₹20,22,46,617.70), Part-B Erection (₹10,91,71,572.82), Total Amount Excluding GST (₹31,14,18,190.52), Statutory 18% GST (₹5,60,55,274.29), and Total Order Value Including GST (₹36,74,73,464.81), complete with official In-Words contractual transcriptions. (Note: Zero-cost erection-supplied materials remain grouped in the detailed Material Part-A tab for GTP/delivery tracking and are kept out of this executive overview table).
+  2. **Contract Baseline & Implementation Milestones**: Tabulated parameter-by-parameter matrix displaying LOA/PO details, acceptance reference, L1/L2 schedule approval memos, and completion target timelines with countdown badges.
+  3. **Bank Guarantees (Security & Performance BGs)**: Tabulated register of BG records with issuing banks, amounts, validity, and action buttons.
+  4. **Target Completion & Time Extensions (EOT)**: Tabulated register of approval memos, revised targets, and extension days.
+
+### 7.6 Feeder-wise Joint Route Survey Summary
+- **Dedicated BOQ Tab**: Accessible via the **"Feeder Survey"** tab on the BOQ page.
+- **Divisional User Authority**: Exclusively editable and certified by **Divisional User** (`Division` / `Divisional` / `Region` / `WBSEDCL` / `Admin`). Turnkey Vendors and Viewers have read-only access.
+- **Required Survey Parameters**:
+  1. `Name of Substation (SS)` (e.g., *English Bazar 33/11kV Substation*, *KPS 33/11kV Substation*)
+  2. `Name of Feeder` (e.g., *English Bazar Feeder-1 (Rabindra Avenue)*)
+  3. `Total Route Length (R/L)` (meters)
+  4. `Cable 400 sq.mm` (length of 33kV/11kV 3C×400 sq.mm XLPE cable in meters)
+  5. `Length of Cable 185 sq.mm` (length of 11kV 3C×185 sq.mm XLPE cable in meters)
+  6. `3-Way RMU` (quantity of 3-Way SCADA RMU - Nos)
+  7. `4-Way RMU` (quantity of 4-Way SCADA RMU - Nos)
+  8. `Capacity-wise DTR` (Distribution Transformer capacities and counts, e.g. *250 kVA (2 Nos), 100 kVA (1 No)*)
+  9. `No of Termination Kits size-wise (400 / 185)` (400 sq.mm sets & 185 sq.mm sets)
+  10. `Micro-tunneling / HDD` (trenchless micro-tunneling length in meters)
+  11. `Open-Cut` (open trenching length in meters)
+  12. `JackPush lengths` (jack-pushing length in meters)
+  13. `HDPE Pipes` (length of protective HDPE pipe in meters)
+- **Compact & Tabulated Architecture**:
+  - **Grouped Two-Tier Superheaders**: *Feeder Identification*, *Route & HT Cables (Laying Lengths)*, *RMUs & Transformers*, *Termination Kits*, *Trenching & Protection Lengths*, and *Survey Status & Actions*.
+  - **Sticky `<tfoot>` Total Summary Row**: Automatically sums all route lengths, cable quantities, equipment counts, and trenching lengths across all feeders.
+  - **Multi-Entry Modal**: Clean modal dialog with categorized field groups, datalists for substations & feeders, and validation.
+  - **Persistence**: Saved to `public.project_contract.feeder_surveys` (JSONB) with automatic graceful fallback to encoded `remarks` for backward-compatible deployments.
 
 ---
 
