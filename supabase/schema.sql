@@ -317,6 +317,12 @@ begin
     raise exception 'Select a material item';
   end if;
   if tg_op = 'UPDATE' then
+    if role = 'Admin' then
+      if new.item_sl is distinct from old.item_sl then
+        raise exception 'The item on this approval cannot change';
+      end if;
+      return new;
+    end if;
     if old.status = 'Approved' then
       raise exception 'This record is already approved';
     end if;
@@ -425,6 +431,9 @@ begin
 
   if role not in ('Region', 'WBSEDCL', 'Admin') then
     raise exception 'This login cannot decide an offer';
+  end if;
+  if tg_op = 'UPDATE' and role = 'Admin' then
+    return new;
   end if;
   if old.status is distinct from 'Offered' then
     raise exception 'Select an offer that is still open';
@@ -1188,7 +1197,12 @@ create or replace function public.admin_rectify_approval(
   p_new_letter_no text,
   p_new_vendor text,
   p_new_sub_date date default null,
-  p_item_sl integer default null
+  p_item_sl integer default null,
+  p_memo_no text default null,
+  p_action_date date default null,
+  p_remarks text default null,
+  p_status text default null,
+  p_approved_qty numeric default null
 )
 returns void
 language plpgsql
@@ -1200,7 +1214,7 @@ declare
 begin
   select role into caller_role from public.profiles where id = auth.uid();
   if caller_role is distinct from 'Admin' then
-    raise exception 'Only Admin can rectify approval tags';
+    raise exception 'Only Admin can edit approval details';
   end if;
 
   update public.approvals
@@ -1208,14 +1222,65 @@ begin
     kind = trim(p_new_kind),
     letter_no = trim(p_new_letter_no),
     vendor = trim(p_new_vendor),
-    sub_date = coalesce(p_new_sub_date, sub_date)
+    sub_date = coalesce(p_new_sub_date, sub_date),
+    memo_no = case when p_memo_no is not null then trim(p_memo_no) else memo_no end,
+    action_date = case when p_action_date is not null then p_action_date else action_date end,
+    appr_date = case when p_status = 'Approved' and p_action_date is not null then p_action_date else appr_date end,
+    remarks = case when p_remarks is not null then trim(p_remarks) else remarks end,
+    status = case when p_status is not null and p_status != '' then p_status else status end,
+    approved_qty = case when p_approved_qty is not null then p_approved_qty else approved_qty end
   where kind = p_old_kind
     and letter_no = p_old_letter_no
     and (p_item_sl is null or item_sl = p_item_sl);
 end;
 $$;
 
-grant execute on function public.admin_rectify_approval(text, text, text, text, text, date, integer) to authenticated;
+grant execute on function public.admin_rectify_approval(text, text, text, text, text, date, integer, text, date, text, text, numeric) to authenticated;
+
+create or replace function public.admin_rectify_offer(
+  p_old_offer_no text,
+  p_new_offer_no text,
+  p_new_offer_date date default null,
+  p_new_manufacturer text default null,
+  p_new_premises text default null,
+  p_new_remarks text default null,
+  p_item_sl integer default null,
+  p_memo_no text default null,
+  p_action_date date default null,
+  p_action_remarks text default null,
+  p_status text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  caller_role text;
+begin
+  select role into caller_role from public.profiles where id = auth.uid();
+  if caller_role is distinct from 'Admin' then
+    raise exception 'Only Admin can edit offer details';
+  end if;
+
+  update public.offers
+  set
+    offer_no = trim(p_new_offer_no),
+    offer_date = coalesce(p_new_offer_date, offer_date),
+    manufacturer = case when p_new_manufacturer is not null then trim(p_new_manufacturer) else manufacturer end,
+    premises = case when p_new_premises is not null then trim(p_new_premises) else premises end,
+    remarks = case when p_new_remarks is not null then trim(p_new_remarks) else remarks end,
+    memo_no = case when p_memo_no is not null then trim(p_memo_no) else memo_no end,
+    action_date = case when p_action_date is not null then p_action_date else action_date end,
+    action_remarks = case when p_action_remarks is not null then trim(p_action_remarks) else action_remarks end,
+    status = case when p_status is not null and p_status != '' then p_status else status end
+  where offer_no = p_old_offer_no
+    and (p_item_sl is null or item_sl = p_item_sl);
+end;
+$$;
+
+grant execute on function public.admin_rectify_offer(text, text, date, text, text, text, integer, text, date, text, text) to authenticated;
+
 
 
 

@@ -1766,6 +1766,18 @@ tfoot tr.boq-foot-row td {
   background: #eff6ff !important;
 }
 
+.edit-form-section {
+  grid-column: 1 / -1;
+  background: #f1f5f9;
+  border-left: 3px solid #0284c7;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  margin-top: 6px;
+}
+
 
 
 

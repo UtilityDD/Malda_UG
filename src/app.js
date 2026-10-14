@@ -1710,6 +1710,9 @@ function lettersTable(groups) {
     let action = '';
     if (canDecide && group.pending) action = `<button type="button" class="tiny strong" data-action="open-letter" data-id="${esc(group.key)}">Review ${group.pending}</button>`;
     else action = `<button type="button" class="tiny" data-action="open-letter" data-id="${esc(group.key)}">View letter</button>`;
+    if (isAdmin()) {
+      action += ` <button type="button" class="tiny" data-action="open-rectify-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Edit</button>`;
+    }
     return `
       <tr class="pick" data-action="open-letter" data-id="${esc(group.key)}" data-q="${esc([group.kind, group.letterNo, ...names, ...group.rows.map(({ record }) => `${record.vendor} ${record.memoNo}`)].join(' '))}">
         <td>${kindBadge(group.kind)}</td>
@@ -1844,6 +1847,12 @@ function unifiedApprovalTable(rows, emptyMsg = 'No items found.', tab = gtpTab) 
       actionBtn = `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${primaryRecord.kind || 'gtp_vendor'}">Details</button>`;
     }
 
+    if (isAdmin() && records.some((r) => r.status !== 'Pending Submission')) {
+      const activeLetters = records.map((r) => r.letterNo).filter(Boolean);
+      const letterAttr = activeLetters.length === 1 ? ` data-letter="${esc(activeLetters[0])}"` : '';
+      actionBtn += ` <button type="button" class="tiny" data-action="open-edit-approval" data-sl="${item.slNo}" data-kind="${primaryRecord.kind || 'vendor'}"${letterAttr}>Edit</button>`;
+    }
+
     const queryParts = [
       searchText(item, materialName(item)),
       ...records.map((r) => `${r.kind} ${r.vendor} ${r.letterNo} ${r.status} ${r.memoNo} ${r.remarks}`)
@@ -1947,6 +1956,9 @@ function offerLettersTable(groups) {
       action = `<button type="button" class="tiny strong" data-action="open-offer-letter" data-id="${esc(group.offerNo)}">Review ${group.waiting}</button>`;
     } else {
       action = `<button type="button" class="tiny" data-action="open-offer-letter" data-id="${esc(group.offerNo)}">View letter</button>`;
+    }
+    if (isAdmin()) {
+      action += ` <button type="button" class="tiny" data-action="open-edit-offer-letter" data-id="${esc(group.offerNo)}">Edit</button>`;
     }
 
     const offices = [...new Set(group.rows.map(({ offer }) => offer.class))];
@@ -2147,9 +2159,9 @@ function syncInspectDialog() {
   }
   dialog.innerHTML = html;
   dialog.classList.toggle('wide', Boolean(
-    (entryModal && entryModal.page === 'gtp' && (entryModal.mode === 'batch' || entryModal.mode === 'letter' || entryModal.mode === 'rectifyLetter')) ||
+    (entryModal && entryModal.page === 'gtp' && (entryModal.mode === 'batch' || entryModal.mode === 'letter' || entryModal.mode === 'rectifyLetter' || entryModal.mode === 'editApproval')) ||
     (entryModal && (entryModal.page === 'contract' || entryModal.page === 'users')) ||
-    (inspModal && (inspModal.mode === 'batch' || inspModal.mode === 'letter'))
+    (inspModal && (inspModal.mode === 'batch' || inspModal.mode === 'letter' || inspModal.mode === 'editOfferLetter'))
   ));
   const batchForm = dialog.querySelector('#form-gtp-batch');
   if (batchForm) {
@@ -2177,7 +2189,7 @@ function syncInspectDialog() {
 function dialogContent() {
   if (currentPage === 'di' && inspModal) {
     if (inspModal.mode === 'batch') return inspBatchModal();
-    if (inspModal.mode === 'letter') return inspLetterModal();
+    if (inspModal.mode === 'letter' || inspModal.mode === 'editOfferLetter') return inspLetterModal();
     const item = findItem(inspModal.sl);
     return item ? inspectModal(item) : '';
   }
@@ -2268,14 +2280,83 @@ function inspBatchModal() {
 
 function inspLetterModal() {
   const group = findOfferGroup(inspModal.offerNo);
+  if (inspModal?.mode === 'editOfferLetter') return inspEditOfferModal(group);
   if (!group) return `${modalTitle('Offer letter not found', 'It may have been modified or deleted.')}`;
   const canDecide = (isRegion() || isAdmin()) && group.waiting > 0;
   const canOffer = isVendor() || isAdmin();
   const sub = `Submitted: ${group.date ? isoToDmy(group.date) : '—'} · ${esc(group.manufacturer)} (${esc(group.premises)}) · ${group.rows.length} ${group.rows.length === 1 ? 'material' : 'materials'}`;
+  const adminActions = isAdmin()
+    ? `<div class="actions" style="margin-top: 12px; display: flex; gap: 8px;">
+         <button type="button" class="ghost" data-action="open-edit-offer-letter" data-id="${esc(group.offerNo)}">✏️ Edit Offer & Memo</button>
+       </div>`
+    : '';
 
   return `
     ${modalTitle(`Inspection Offer · ${esc(group.offerNo)}`, esc(sub))}
     ${canDecide ? inspLetterDecisionForm(group) : inspLetterSummary(group)}
+    ${adminActions}
+  `;
+}
+
+function inspEditOfferModal(group) {
+  if (!group) return modalTitle('Offer letter not found', 'Cannot edit missing offer.');
+  const firstOffer = group.rows[0]?.offer || {};
+  return `
+    ${modalTitle(`Edit Offer & Memo: ${esc(group.offerNo)}`, 'Admin tool to edit letter/memo numbers, submission/action dates, and comments.')}
+    <form class="entry entry-plain" id="form-edit-offer">
+      <input type="hidden" name="oldOfferNo" value="${esc(group.offerNo)}" />
+
+      <div class="edit-form-section">Turnkey Agency Offer Details</div>
+
+      <label>Offer Letter No.
+        <input name="newOfferNo" required value="${esc(group.offerNo)}" placeholder="e.g. TE/MALDA/INSP/01" />
+      </label>
+
+      <label>Offer Submission Date
+        <input name="newOfferDate" type="date" value="${esc(group.date || '')}" />
+      </label>
+
+      <label>Manufacturer Name
+        <input name="newManufacturer" required value="${esc(group.manufacturer || '')}" placeholder="e.g. Havells India Ltd" />
+      </label>
+
+      <label>Inspection Premises
+        <input name="newPremises" required value="${esc(group.premises || '')}" placeholder="e.g. Works at Alwar, Rajasthan" />
+      </label>
+
+      <label class="span-2">Agency Offer Remarks / Comment
+        <input name="newRemarks" value="${esc(firstOffer.remarks || '')}" placeholder="Optional remarks" />
+      </label>
+
+      <div class="edit-form-section">Approving Authority Decision & Comments (Memo & Remarks)</div>
+
+      <label>Decision Status
+        <select name="newStatus" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          <option value="Offered"${firstOffer.status === 'Offered' ? ' selected' : ''}>Offered (Pending Decision)</option>
+          <option value="Cleared"${firstOffer.status === 'Cleared' ? ' selected' : ''}>Cleared (Local Inspection)</option>
+          <option value="Forwarded"${firstOffer.status === 'Forwarded' ? ' selected' : ''}>Forwarded (to HQ)</option>
+          <option value="Rejected"${firstOffer.status === 'Rejected' ? ' selected' : ''}>Rejected</option>
+        </select>
+      </label>
+
+      <label>Decision Memo No.
+        <input name="newMemoNo" value="${esc(firstOffer.memoNo || '')}" placeholder="e.g. RM/MALDA/INSP/2026/001" />
+      </label>
+
+      <label>Decision / Action Date
+        <input name="newActionDate" type="date" value="${esc(firstOffer.actionDate || '')}" />
+      </label>
+
+      <label class="span-2">Authority Remarks / Comments
+        <input name="newActionRemarks" value="${esc(firstOffer.actionRemarks || '')}" placeholder="e.g. Cleared for dispatch / Comments" />
+      </label>
+
+      <div class="actions span-all" style="display: flex; gap: 8px; margin-top: 12px;">
+        <button class="primary" type="submit">Save Offer & Memo Details</button>
+        <button type="button" class="ghost" data-action="cancel-edit-offer">Cancel</button>
+      </div>
+      <p class="form-msg span-all"></p>
+    </form>
   `;
 }
 
@@ -2485,7 +2566,10 @@ function offerNote(item) {
   ];
   if (offer.memoNo || offer.actionDate) lines.push([offer.actionDate, offer.memoNo].filter(Boolean).join(' · '));
   if (offer.actionRemarks || offer.remarks) lines.push(offer.actionRemarks || offer.remarks);
-  return `<p class="quiet">${lines.map((line) => esc(line)).join('<br>')}</p>`;
+  const adminBtn = isAdmin()
+    ? `<br><button type="button" class="tiny" style="margin-top:4px;" data-action="open-edit-offer-letter" data-id="${esc(offer.offerNo)}">✏️ Edit Offer & Memo</button>`
+    : '';
+  return `<p class="quiet">${lines.map((line) => esc(line)).join('<br>')}${adminBtn}</p>`;
 }
 
 function openEntry(sl, id, mode) {
@@ -2929,6 +3013,7 @@ function gtpModal() {
   if (entryModal.mode === 'newMaterial') return gtpNewMaterialModal();
   if (entryModal.mode === 'batch') return gtpBatchModal();
   if (entryModal.mode === 'letter' || entryModal.mode === 'rectifyLetter') return gtpLetterModal();
+  if (entryModal.mode === 'editApproval') return gtpEditApprovalModal();
   const item = findItem(entryModal.sl);
   if (!item) return '';
   const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(entryModal.id) ? entryModal.id : 'gtp_vendor';
@@ -3068,7 +3153,7 @@ function gtpLetterModal() {
   const canResetLetter = isAdmin() && group.rows.some(({ record }) => record.status === 'Approved' || record.status === 'Rejected' || record.status === 'Hold');
   const adminActions = isAdmin()
     ? `<div class="actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-         <button type="button" class="ghost" data-action="open-rectify-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">✏️ Rectify Letter Tagging</button>
+         <button type="button" class="ghost" data-action="open-rectify-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">✏️ Edit Letter, Memo & Comments</button>
          ${canResetLetter ? `<button type="button" class="ghost" data-action="reset-letter-decision" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">↺ Reset decisions to Submitted</button>` : ''}
          ${canDeleteLetter ? `<button type="button" class="ghost danger" data-action="delete-approval-letter" data-kind="${group.kind}" data-letter="${esc(group.letterNo)}">Delete letter</button>` : ''}
        </div>`
@@ -3090,14 +3175,17 @@ function gtpRectifyLetterModal(group) {
     `;
   }
   const vendorVal = group.rows[0]?.record?.vendor || '';
+  const firstRec = group.rows[0]?.record || {};
   const materialList = group.rows
     .map(({ item }) => `<li><strong>Sl ${item.slNo}:</strong> ${esc(materialName(item))}</li>`)
     .join('');
   return `
-    ${modalTitle(`Rectify Tagging: ${esc(group.letterNo)}`, 'Admin tool to rectify mistaken tagging (Vendor vs GTP), letter reference number, vendor name, or date.')}
+    ${modalTitle(`Edit Letter & Memo: ${esc(group.letterNo)}`, 'Admin tool to edit letter reference, vendor name, dates, decision memo numbers, and comments.')}
     <form class="entry entry-plain" id="form-rectify-letter">
       <input type="hidden" name="oldKind" value="${esc(group.kind)}" />
       <input type="hidden" name="oldLetterNo" value="${esc(group.letterNo)}" />
+
+      <div class="edit-form-section">Turnkey Agency Submission Details</div>
 
       <label class="span-2">Approval Type / Tagging
         <select name="newKind" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
@@ -3119,6 +3207,30 @@ function gtpRectifyLetterModal(group) {
         <input name="newSubDate" type="date" value="${esc(group.subDate || '')}" />
       </label>
 
+      <div class="edit-form-section">Approving Authority Decision & Comments (Memo & Remarks)</div>
+
+      <label>Decision Status
+        <select name="newStatus" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          <option value="">Keep current status</option>
+          <option value="Submitted"${firstRec.status === 'Submitted' ? ' selected' : ''}>Submitted (Pending Decision)</option>
+          <option value="Approved"${firstRec.status === 'Approved' ? ' selected' : ''}>Approved</option>
+          <option value="Hold"${firstRec.status === 'Hold' ? ' selected' : ''}>Hold</option>
+          <option value="Rejected"${firstRec.status === 'Rejected' ? ' selected' : ''}>Rejected</option>
+        </select>
+      </label>
+
+      <label>Decision Memo No.
+        <input name="newMemoNo" value="${esc(firstRec.memoNo || '')}" placeholder="e.g. RM/MALDA/2026/05" />
+      </label>
+
+      <label>Decision / Memo Date
+        <input name="newActionDate" type="date" value="${esc(firstRec.actionDate || '')}" />
+      </label>
+
+      <label class="span-2">Authority Remarks / Comments
+        <input name="newRemarks" value="${esc(firstRec.remarks || '')}" placeholder="Remarks / comments by approving authority" />
+      </label>
+
       <div class="span-all" style="background: var(--surface-2, #f8fafc); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-top: 4px;">
         <span style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">Materials covered under this letter (${group.rows.length}):</span>
         <ul style="margin: 6px 0 0 16px; padding: 0; font-size: 0.85rem; line-height: 1.5; color: var(--text);">
@@ -3127,8 +3239,107 @@ function gtpRectifyLetterModal(group) {
       </div>
 
       <div class="actions span-all" style="display: flex; gap: 8px; margin-top: 12px;">
-        <button class="primary" type="submit">Save Rectified Tagging</button>
+        <button class="primary" type="submit">Save Changes to Letter & Memo</button>
         <button type="button" class="ghost" data-action="cancel-rectify-letter">Cancel</button>
+      </div>
+      <p class="form-msg span-all"></p>
+    </form>
+  `;
+}
+
+function gtpEditApprovalModal() {
+  const item = findItem(entryModal.sl);
+  if (!item) return modalTitle('Item not found', 'Cannot edit missing item.');
+  const records = itemAllApprovals(item);
+  if (!records.length) return modalTitle('No approval record', 'There are no submissions to edit for this material.');
+
+  let record = entryModal.letter
+    ? records.find((r) => r.letterNo === entryModal.letter)
+    : (records.find((r) => r.letterNo) || records[0]);
+  if (!record) record = records[0];
+
+  const letterOptions = records.length > 1
+    ? `<label class="span-2">Select Submission / Letter to Edit
+        <select name="selectedLetter" data-action="change-edit-approval-record" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          ${records.map((r) => `<option value="${esc(r.letterNo || '')}"${r.letterNo === record.letterNo ? ' selected' : ''}>${esc(r.letterNo || 'No Letter')} · ${esc(r.vendor || 'No Vendor')} · ${esc(r.status || 'Pending')} (${kindLabel(r.kind)})</option>`).join('')}
+        </select>
+       </label>`
+    : '';
+
+  const otherCount = record.letterNo
+    ? gtpApprovals.filter((r) => r.kind === record.kind && r.letterNo === record.letterNo).length
+    : 1;
+
+  const scopeCheckbox = otherCount > 1
+    ? `<label class="span-all" style="display: flex; align-items: flex-start; gap: 8px; font-weight: normal; margin-top: 8px; background: rgba(0,0,0,0.03); padding: 8px 12px; border-radius: 6px; font-size: 0.86rem;">
+        <input type="checkbox" name="applyToAll" value="1" checked style="margin-top: 2px;" />
+        <span>Also apply Letter No, Date, Vendor, Memo No, Action Date & Comments across all ${otherCount} materials covered under letter <strong>${esc(record.letterNo)}</strong> (Approved Qty remains specific to this item)</span>
+       </label>`
+    : '';
+
+  return `
+    ${modalTitle(`Edit Approval: Sl ${item.slNo} · ${esc(materialName(item))}`, 'Admin tool to edit turnkey letter details, memo number, dates, and comments.')}
+    <form class="entry entry-plain" id="form-edit-approval">
+      <input type="hidden" name="itemSl" value="${item.slNo}" />
+      <input type="hidden" name="oldKind" value="${esc(record.kind)}" />
+      <input type="hidden" name="oldLetterNo" value="${esc(record.letterNo || '')}" />
+
+      ${letterOptions}
+
+      <div class="edit-form-section">Turnkey Agency Submission Details</div>
+
+      <label class="span-2">Approval Type / Tagging
+        <select name="newKind" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          <option value="gtp_vendor"${record.kind === 'gtp_vendor' ? ' selected' : ''}>GTP + Vendor Combined (kind = gtp_vendor)</option>
+          <option value="gtp"${record.kind === 'gtp' ? ' selected' : ''}>GTP Approval only (kind = gtp)</option>
+          <option value="vendor"${record.kind === 'vendor' ? ' selected' : ''}>Vendor Approval only (kind = vendor)</option>
+        </select>
+      </label>
+
+      <label>Letter Reference No.
+        <input name="newLetterNo" required value="${esc(record.letterNo || '')}" placeholder="e.g. TE-HO/RM/Malda_UG/025" />
+      </label>
+
+      <label>Vendor / Manufacturer Name
+        <input name="newVendor" required value="${esc(record.vendor || '')}" placeholder="e.g. Polycab India Ltd" />
+      </label>
+
+      <label class="span-2">Submission Date
+        <input name="newSubDate" type="date" value="${esc(record.subDate || '')}" />
+      </label>
+
+      <div class="edit-form-section">Approving Authority Decision & Comments (Memo & Remarks)</div>
+
+      <label>Decision Status
+        <select name="newStatus" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          <option value="Submitted"${record.status === 'Submitted' ? ' selected' : ''}>Submitted (Pending Decision)</option>
+          <option value="Approved"${record.status === 'Approved' ? ' selected' : ''}>Approved</option>
+          <option value="Hold"${record.status === 'Hold' ? ' selected' : ''}>Hold</option>
+          <option value="Rejected"${record.status === 'Rejected' ? ' selected' : ''}>Rejected</option>
+        </select>
+      </label>
+
+      <label>Decision Memo No.
+        <input name="newMemoNo" value="${esc(record.memoNo || '')}" placeholder="e.g. RM/MALDA/2026/05" />
+      </label>
+
+      <label>Decision / Memo Date
+        <input name="newActionDate" type="date" value="${esc(record.actionDate || '')}" />
+      </label>
+
+      <label>Approved Qty (${esc(item.unit)})
+        <input name="newApprovedQty" type="number" min="0" step="any" value="${esc(record.approvedQty !== null && record.approvedQty !== undefined && record.approvedQty !== '' ? record.approvedQty : item.loaQty)}" />
+      </label>
+
+      <label class="span-2">Authority Remarks / Comments
+        <input name="newRemarks" value="${esc(record.remarks || '')}" placeholder="Remarks / comments by approving authority" />
+      </label>
+
+      ${scopeCheckbox}
+
+      <div class="actions span-all" style="display: flex; gap: 8px; margin-top: 12px;">
+        <button class="primary" type="submit">Save Changes</button>
+        <button type="button" class="ghost" data-action="cancel-edit-approval">Cancel</button>
       </div>
       <p class="form-msg span-all"></p>
     </form>
@@ -3237,7 +3448,7 @@ function gtpNotes(records, item, kind) {
     const recKind = record.kind || kind || 'gtp_vendor';
     const adminBtns = isAdmin() && record.letterNo
       ? `<br><div style="display:flex; gap:6px; margin-top:4px; flex-wrap:wrap;">
-           <button type="button" class="tiny" data-action="open-rectify-letter" data-kind="${recKind}" data-letter="${esc(record.letterNo)}" data-sl="${item.slNo}">✏️ Rectify tagging</button>
+           <button type="button" class="tiny" data-action="open-edit-approval" data-kind="${recKind}" data-letter="${esc(record.letterNo)}" data-sl="${item.slNo}">✏️ Edit details & comment</button>
            ${canResetRecord ? `<button type="button" class="tiny" data-action="reset-approval-decision" data-sl="${item.slNo}" data-kind="${recKind}" data-letter="${esc(record.letterNo)}">↺ Reset to Submitted</button>` : ''}
            ${canDeleteRecord ? `<button type="button" class="tiny danger" data-action="delete-approval" data-sl="${item.slNo}" data-kind="${recKind}" data-letter="${esc(record.letterNo)}">Delete</button>` : ''}
          </div>`
@@ -4000,6 +4211,37 @@ function onClick(event) {
     paint();
     return;
   }
+  if (action === 'open-edit-approval') {
+    const sl = Number(button.dataset.sl);
+    const kind = button.dataset.kind || (gtpTab === 'gtp' ? 'gtp' : 'vendor');
+    const letter = button.dataset.letter || '';
+    inspModal = null;
+    entryModal = { page: 'gtp', sl, id: kind, letter, mode: 'editApproval' };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'cancel-edit-approval') {
+    if (entryModal && entryModal.sl) {
+      entryModal.mode = 'note';
+    } else {
+      entryModal = null;
+    }
+    paint();
+    return;
+  }
+  if (action === 'open-edit-offer-letter') {
+    const offerNo = button.dataset.id;
+    inspModal = { mode: 'editOfferLetter', offerNo };
+    inspectOpenedAt = Date.now();
+    paint();
+    return;
+  }
+  if (action === 'cancel-edit-offer') {
+    if (inspModal) inspModal.mode = 'letter';
+    paint();
+    return;
+  }
   if (action === 'batch-cancel-preview') {
     if (entryModal && entryModal.draft) {
       entryModal.draft.previewing = false;
@@ -4191,6 +4433,8 @@ function onSubmit(event) {
   if (form.id === 'form-contract-eot') saveContractEot(form);
   if (form.id === 'form-feeder-survey') saveFeederSurvey(form);
   if (form.id === 'form-rectify-letter') saveRectifyLetter(form);
+  if (form.id === 'form-edit-approval') saveEditApproval(form);
+  if (form.id === 'form-edit-offer') saveEditOffer(form);
   if (form.id === 'form-boq') saveBoq(form);
   if (form.id === 'form-gtp-batch') {
     // Enter inside the filter box should filter, not submit the letter.
@@ -4322,6 +4566,13 @@ function onChange(event) {
   }
   if (event.target.name === 'offer' && event.target.form?.id === 'form-offer-action') {
     syncOfferAction(event.target.form);
+    return;
+  }
+  if (event.target.name === 'selectedLetter' && event.target.form?.id === 'form-edit-approval') {
+    if (entryModal) {
+      entryModal.letter = event.target.value;
+      paint();
+    }
     return;
   }
   if (event.target.name === 'pick' && event.target.form?.id === 'form-gtp-batch') {
@@ -4742,14 +4993,30 @@ async function saveRectifyLetter(form) {
   const newLetterNo = field(form, 'newLetterNo');
   const newVendor = field(form, 'newVendor');
   const newSubDate = field(form, 'newSubDate');
+  const newStatus = field(form, 'newStatus');
+  const newMemoNo = field(form, 'newMemoNo');
+  const newActionDate = field(form, 'newActionDate');
+  const newRemarks = field(form, 'newRemarks');
 
   if (!newLetterNo || !newVendor) {
     return setMsg(form, 'Please enter Letter Reference No. and Vendor Name.');
   }
 
   try {
-    setMsg(form, 'Saving rectified tagging…');
-    await remote.rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo, newVendor, newSubDate);
+    setMsg(form, 'Saving changes…');
+    await remote.rectifyApproval(
+      oldKind,
+      oldLetterNo,
+      newKind,
+      newLetterNo,
+      newVendor,
+      newSubDate,
+      null,
+      newMemoNo,
+      newActionDate,
+      newRemarks,
+      newStatus
+    );
     await pullRegister();
     const returnSl = entryModal?.sl;
     if (returnSl) {
@@ -4758,10 +5025,96 @@ async function saveRectifyLetter(form) {
       const newKey = letterKey(newKind, newLetterNo);
       entryModal = { page: 'gtp', sl: 0, id: newKey, mode: 'letter' };
     }
-    toast(`Letter ${newLetterNo} tagging rectified!`);
+    toast(`Letter ${newLetterNo} details updated!`);
     paint();
   } catch (error) {
-    setMsg(form, error.message || 'Could not rectify tagging');
+    setMsg(form, error.message || 'Could not save changes');
+  }
+}
+
+async function saveEditApproval(form) {
+  if (user.role !== 'Admin') return;
+  const itemSl = Number(field(form, 'itemSl'));
+  const oldKind = field(form, 'oldKind');
+  const oldLetterNo = field(form, 'oldLetterNo');
+  const newKind = field(form, 'newKind');
+  const newLetterNo = field(form, 'newLetterNo');
+  const newVendor = field(form, 'newVendor');
+  const newSubDate = field(form, 'newSubDate');
+  const newStatus = field(form, 'newStatus');
+  const newMemoNo = field(form, 'newMemoNo');
+  const newActionDate = field(form, 'newActionDate');
+  const newApprovedQty = field(form, 'newApprovedQty');
+  const newRemarks = field(form, 'newRemarks');
+  const applyToAll = form.elements['applyToAll'] ? form.elements['applyToAll'].checked : false;
+
+  if (!newLetterNo || !newVendor) {
+    return setMsg(form, 'Please enter Letter Reference No. and Vendor Name.');
+  }
+
+  try {
+    setMsg(form, 'Saving changes…');
+    await remote.rectifyApproval(
+      oldKind,
+      oldLetterNo,
+      newKind,
+      newLetterNo,
+      newVendor,
+      newSubDate,
+      applyToAll ? null : itemSl,
+      newMemoNo,
+      newActionDate,
+      newRemarks,
+      newStatus,
+      newApprovedQty
+    );
+    await pullRegister();
+    entryModal = { page: 'gtp', sl: itemSl, id: newKind, mode: 'note' };
+    toast('Approval details & comments updated!');
+    paint();
+  } catch (error) {
+    setMsg(form, error.message || 'Could not save changes');
+  }
+}
+
+async function saveEditOffer(form) {
+  if (user.role !== 'Admin') return;
+  const oldOfferNo = field(form, 'oldOfferNo');
+  const newOfferNo = field(form, 'newOfferNo');
+  const newOfferDate = field(form, 'newOfferDate');
+  const newManufacturer = field(form, 'newManufacturer');
+  const newPremises = field(form, 'newPremises');
+  const newRemarks = field(form, 'newRemarks');
+  const newStatus = field(form, 'newStatus');
+  const newMemoNo = field(form, 'newMemoNo');
+  const newActionDate = field(form, 'newActionDate');
+  const newActionRemarks = field(form, 'newActionRemarks');
+
+  if (!newOfferNo || !newManufacturer) {
+    return setMsg(form, 'Please enter Offer Letter No. and Manufacturer Name.');
+  }
+
+  try {
+    setMsg(form, 'Saving changes…');
+    await remote.rectifyOffer(
+      oldOfferNo,
+      newOfferNo,
+      newOfferDate,
+      newManufacturer,
+      newPremises,
+      newRemarks,
+      null,
+      newMemoNo,
+      newActionDate,
+      newActionRemarks,
+      newStatus
+    );
+    await pullRegister();
+    inspModal = null;
+    toast(`Offer ${newOfferNo} details updated!`);
+    paint();
+  } catch (error) {
+    setMsg(form, error.message || 'Could not save changes');
   }
 }
 

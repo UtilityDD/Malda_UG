@@ -375,7 +375,20 @@ export async function removeApprovalLetter(kind, letterNo) {
   if (error) throw wrap(error);
 }
 
-export async function rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo, newVendor, newSubDate = null, itemSl = null) {
+export async function rectifyApproval(
+  oldKind,
+  oldLetterNo,
+  newKind,
+  newLetterNo,
+  newVendor,
+  newSubDate = null,
+  itemSl = null,
+  memoNo = null,
+  actionDate = null,
+  remarks = null,
+  status = null,
+  approvedQty = null
+) {
   const { error } = await supabase.rpc('admin_rectify_approval', {
     p_old_kind: oldKind,
     p_old_letter_no: oldLetterNo,
@@ -383,43 +396,84 @@ export async function rectifyApproval(oldKind, oldLetterNo, newKind, newLetterNo
     p_new_letter_no: newLetterNo,
     p_new_vendor: newVendor,
     p_new_sub_date: newSubDate || null,
-    p_item_sl: itemSl || null
+    p_item_sl: itemSl || null,
+    p_memo_no: memoNo !== null ? memoNo : null,
+    p_action_date: actionDate || null,
+    p_remarks: remarks !== null ? remarks : null,
+    p_status: status || null,
+    p_approved_qty: approvedQty !== null && approvedQty !== '' ? Number(approvedQty) : null
   });
 
   if (!error) return;
 
-  // Fallback if RPC is not present or restricted
-  let selectQuery = supabase.from('approvals').select('*').eq('kind', oldKind).eq('letter_no', oldLetterNo);
-  if (itemSl) selectQuery = selectQuery.eq('item_sl', itemSl);
-  const { data: rows, error: selErr } = await selectQuery;
-  if (selErr) throw wrap(selErr);
-  if (!rows || rows.length === 0) return;
-
-  if (oldKind !== newKind) {
-    let delQuery = supabase.from('approvals').delete().eq('kind', oldKind).eq('letter_no', oldLetterNo);
-    if (itemSl) delQuery = delQuery.eq('item_sl', itemSl);
-    const { error: delErr } = await delQuery;
-    if (delErr) throw wrap(delErr);
-
-    const newRows = rows.map((r) => ({
-      ...r,
-      kind: newKind,
-      letter_no: newLetterNo.trim(),
-      vendor: newVendor.trim(),
-      sub_date: newSubDate || r.sub_date
-    }));
-    const { error: insErr } = await supabase.from('approvals').insert(newRows);
-    if (insErr) throw wrap(insErr);
-  } else {
-    let updQuery = supabase.from('approvals').update({
-      letter_no: newLetterNo.trim(),
-      vendor: newVendor.trim(),
-      ...(newSubDate ? { sub_date: newSubDate } : {})
-    }).eq('kind', oldKind).eq('letter_no', oldLetterNo);
-    if (itemSl) updQuery = updQuery.eq('item_sl', itemSl);
-    const { error: updErr } = await updQuery;
-    if (updErr) throw wrap(updErr);
+  const updateFields = {
+    kind: newKind,
+    letter_no: newLetterNo,
+    vendor: newVendor,
+    ...(newSubDate ? { sub_date: newSubDate } : {})
+  };
+  if (memoNo !== null) updateFields.memo_no = memoNo;
+  if (actionDate) {
+    updateFields.action_date = actionDate;
+    if (status === 'Approved') updateFields.appr_date = actionDate;
   }
+  if (remarks !== null) updateFields.remarks = remarks;
+  if (status) updateFields.status = status;
+  if (approvedQty !== null && approvedQty !== '') updateFields.approved_qty = Number(approvedQty);
+
+  let query = supabase.from('approvals').update(updateFields).eq('kind', oldKind).eq('letter_no', oldLetterNo);
+  if (itemSl) query = query.eq('item_sl', itemSl);
+
+  const { error: fallErr } = await query;
+  if (fallErr) throw wrap(fallErr);
+}
+
+export async function rectifyOffer(
+  oldOfferNo,
+  newOfferNo,
+  newOfferDate = null,
+  newManufacturer = null,
+  newPremises = null,
+  newRemarks = null,
+  itemSl = null,
+  memoNo = null,
+  actionDate = null,
+  actionRemarks = null,
+  status = null
+) {
+  const { error } = await supabase.rpc('admin_rectify_offer', {
+    p_old_offer_no: oldOfferNo,
+    p_new_offer_no: newOfferNo,
+    p_new_offer_date: newOfferDate || null,
+    p_new_manufacturer: newManufacturer || null,
+    p_new_premises: newPremises || null,
+    p_new_remarks: newRemarks !== null ? newRemarks : null,
+    p_item_sl: itemSl || null,
+    p_memo_no: memoNo !== null ? memoNo : null,
+    p_action_date: actionDate || null,
+    p_action_remarks: actionRemarks !== null ? actionRemarks : null,
+    p_status: status || null
+  });
+
+  if (!error) return;
+
+  const updateFields = {
+    offer_no: newOfferNo
+  };
+  if (newOfferDate) updateFields.offer_date = newOfferDate;
+  if (newManufacturer) updateFields.manufacturer = newManufacturer;
+  if (newPremises) updateFields.premises = newPremises;
+  if (newRemarks !== null) updateFields.remarks = newRemarks;
+  if (memoNo !== null) updateFields.memo_no = memoNo;
+  if (actionDate) updateFields.action_date = actionDate;
+  if (actionRemarks !== null) updateFields.action_remarks = actionRemarks;
+  if (status) updateFields.status = status;
+
+  let query = supabase.from('offers').update(updateFields).eq('offer_no', oldOfferNo);
+  if (itemSl) query = query.eq('item_sl', itemSl);
+
+  const { error: fallErr } = await query;
+  if (fallErr) throw wrap(fallErr);
 }
 
 export async function removeInvoice(id) {
