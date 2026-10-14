@@ -171,6 +171,15 @@ function getUserPermissions(targetUser) {
   if (targetUser.permissions && typeof targetUser.permissions === 'object' && Object.keys(targetUser.permissions).length > 0) {
     return targetUser.permissions;
   }
+  if (targetUser.id) {
+    try {
+      const local = localStorage.getItem('malda_user_perms_' + targetUser.id);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) return parsed;
+      }
+    } catch {}
+  }
   const role = targetUser.role || 'Viewer';
   return ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.Viewer;
 }
@@ -662,45 +671,40 @@ function renderUsers() {
     const viewPages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'view');
     const nonePages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'none');
 
-    let authSummaryHtml = '';
-    if (person.role === 'Admin') {
-      authSummaryHtml = '<span class="badge ok" style="font-size: 11px;">👑 Admin (Full Access)</span>';
-    } else {
-      const tags = [];
-      if (perms.gtp_submit) tags.push('<span class="perm-tag tag-sub">📤 GTP Submit</span>');
-      if (perms.gtp_approve) tags.push('<span class="perm-tag tag-app">✅ GTP Approve</span>');
-      if (perms.di_offer) tags.push('<span class="perm-tag tag-sub">🔎 DI Offer</span>');
-      if (perms.di_issue) tags.push('<span class="perm-tag tag-app">🚚 DI Issue</span>');
-      if (perms.billing_submit) tags.push('<span class="perm-tag tag-sub">💵 Bill Submit</span>');
-      if (perms.billing_pay) tags.push('<span class="perm-tag tag-app">💳 Bill Pay</span>');
-      if (perms.daily_log) tags.push('<span class="perm-tag tag-sub">📝 DPR Log</span>');
-      if (perms.daily_verify) tags.push('<span class="perm-tag tag-app">✔️ DPR Verify</span>');
-      if (perms.survey_entry) tags.push('<span class="perm-tag tag-other">🗺️ Survey</span>');
-      if (perms.boq_edit) tags.push('<span class="perm-tag tag-other">📋 BOQ</span>');
-      if (perms.receive_record) tags.push('<span class="perm-tag tag-other">📦 Store</span>');
+    const tags = [];
+    if (perms.gtp_submit) tags.push('<span class="perm-tag tag-sub">📤 GTP Submit</span>');
+    if (perms.gtp_approve) tags.push('<span class="perm-tag tag-app">✅ GTP Approve</span>');
+    if (perms.di_offer) tags.push('<span class="perm-tag tag-sub">🔎 DI Offer</span>');
+    if (perms.di_issue) tags.push('<span class="perm-tag tag-app">🚚 DI Issue</span>');
+    if (perms.billing_submit) tags.push('<span class="perm-tag tag-sub">💵 Bill Submit</span>');
+    if (perms.billing_pay) tags.push('<span class="perm-tag tag-app">💳 Bill Pay</span>');
+    if (perms.daily_log) tags.push('<span class="perm-tag tag-sub">📝 DPR Log</span>');
+    if (perms.daily_verify) tags.push('<span class="perm-tag tag-app">✔️ DPR Verify</span>');
+    if (perms.survey_entry) tags.push('<span class="perm-tag tag-other">🗺️ Survey</span>');
+    if (perms.boq_edit) tags.push('<span class="perm-tag tag-other">📋 BOQ</span>');
+    if (perms.receive_record) tags.push('<span class="perm-tag tag-other">📦 Store</span>');
 
-      const tagPreview = tags.slice(0, 3).join(' ') + (tags.length > 3 ? ` <span class="meta" style="font-size:10px;">+${tags.length - 3}</span>` : '');
+    const tagPreview = tags.slice(0, 3).join(' ') + (tags.length > 3 ? ` <span class="meta" style="font-size:10px;">+${tags.length - 3}</span>` : '');
 
-      authSummaryHtml = `
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-          <div style="display: flex; flex-direction: column; gap: 3px;">
-            <div style="display: flex; gap: 4px; align-items: center;">
-              <span class="badge ${editPages.length ? 'ok' : 'idle'}" style="font-size: 10.5px;">✏️ ${editPages.length} Edit</span>
-              ${viewPages.length ? `<span class="badge idle" style="font-size: 10.5px;">👁️ ${viewPages.length} View</span>` : ''}
-              ${nonePages.length ? `<span class="badge bad" style="font-size: 10.5px;">🚫 ${nonePages.length} Off</span>` : ''}
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
-              ${tagPreview || '<span class="quiet" style="font-size: 11px;">View only</span>'}
-            </div>
+    const authSummaryHtml = `
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <div style="display: flex; gap: 4px; align-items: center;">
+            <span class="badge ${editPages.length ? 'ok' : 'idle'}" style="font-size: 10.5px;">✏️ ${editPages.length} Edit</span>
+            ${viewPages.length ? `<span class="badge idle" style="font-size: 10.5px;">👁️ ${viewPages.length} View</span>` : ''}
+            ${nonePages.length ? `<span class="badge bad" style="font-size: 10.5px;">🚫 ${nonePages.length} Off</span>` : ''}
           </div>
-          ${canManage ? `
-            <button type="button" class="tiny strong" data-action="edit-user-perms" data-id="${esc(person.id)}" title="Configure selective Edit vs View and granular actions" style="white-space: nowrap; padding: 3px 8px; font-weight:700;">
-              ⚙️ Perms
-            </button>
-          ` : ''}
+          <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
+            ${tagPreview || '<span class="quiet" style="font-size: 11px;">View only</span>'}
+          </div>
         </div>
-      `;
-    }
+        ${canManage ? `
+          <button type="button" class="tiny strong" data-action="edit-user-perms" data-id="${esc(person.id)}" title="Configure selective Edit vs View and granular actions" style="white-space: nowrap; padding: 3px 8px; font-weight:700;">
+            ⚙️ Perms
+          </button>
+        ` : ''}
+      </div>
+    `;
 
     return `
       <tr>
@@ -819,7 +823,7 @@ function userPermissionsModal(person) {
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 10px;">
         <span style="font-size: 11.5px; color: #475569;" id="perm-matrix-summary"></span>
         <div style="display: flex; gap: 8px;">
-          <button type="button" class="ghost" data-action="close-dialog">Cancel</button>
+          <button type="button" class="ghost" data-action="close-modal">Cancel</button>
           <button type="submit" class="primary" style="font-weight: 700; padding: 6px 18px; font-size: 12.5px;">Save Authorizations</button>
         </div>
       </div>
@@ -4300,6 +4304,28 @@ function dailyLogTable(pendingOnly) {
 }
 
 function onClick(event) {
+  const pill = event.target.closest('.pill-opt');
+  if (pill) {
+    const rad = pill.querySelector('input[type="radio"]');
+    if (rad && !rad.checked) {
+      rad.checked = true;
+      rad.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return;
+  }
+
+  const actionChip = event.target.closest('.perm-action-chip');
+  if (actionChip && event.target.tagName !== 'INPUT') {
+    const chk = actionChip.querySelector('input[type="checkbox"]');
+    if (chk) {
+      const wrap = actionChip.closest('.perm-actions-wrap');
+      if (wrap && wrap.classList.contains('disabled')) return;
+      chk.checked = !chk.checked;
+      chk.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return;
+  }
+
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
@@ -4705,7 +4731,10 @@ function onClick(event) {
   if (action === 'save-person') savePerson(button.dataset.id);
   if (action === 'reset-pin') resetUserPin(button.dataset.id, button.dataset.name);
   if (action === 'edit-user-perms') {
-    if (!can('users_manage') && user.role !== 'Admin') return;
+    if (!isAdmin() && !can('users_manage')) {
+      toast('Only administrators can configure user authorizations');
+      return;
+    }
     entryModal = { page: 'users', mode: 'permissions', id: button.dataset.id };
     inspectOpenedAt = Date.now();
     paint();
@@ -4831,45 +4860,48 @@ function onChange(event) {
   if (event.target.classList.contains('perm-page-radio')) {
     const val = event.target.value;
     const pageId = event.target.dataset.page;
-    const card = event.target.closest('.perm-matrix-card');
-    if (card) {
-      card.className = `perm-matrix-card mode-${val}`;
-      const segLabels = card.querySelectorAll('.perm-seg-label');
-      segLabels.forEach((lbl) => {
+    const row = event.target.closest('.perm-table-row') || event.target.closest('.perm-matrix-card');
+    if (row) {
+      row.className = row.tagName === 'TR' ? `perm-table-row mode-${val}` : `perm-matrix-card mode-${val}`;
+      const pillOpts = row.querySelectorAll('.pill-opt, .perm-seg-label');
+      pillOpts.forEach((lbl) => {
         const rad = lbl.querySelector('input');
         if (rad && rad.value === val) lbl.classList.add('active');
         else lbl.classList.remove('active');
       });
 
-      const wrap = card.querySelector(`#actions-wrap-${pageId}`) || card.querySelector(`#create-actions-wrap-${pageId}`);
+      const wrap = row.querySelector(`[id$="-actions-wrap-${pageId}"]`);
       if (wrap) {
-        const statusSpan = wrap.querySelector('.actions-status-text');
         if (val === 'edit') {
-          wrap.classList.remove('locked');
-          if (statusSpan) statusSpan.textContent = '⚡ Action capabilities allowed during Edit access:';
-        } else if (val === 'view') {
-          wrap.classList.add('locked');
-          if (statusSpan) statusSpan.textContent = '👁️ Page set to View Only (Editing actions locked)';
+          wrap.classList.remove('disabled', 'locked');
         } else {
-          wrap.classList.add('locked');
-          if (statusSpan) statusSpan.textContent = '🚫 Page Hidden (No access)';
+          wrap.classList.add(wrap.classList.contains('perm-actions-container') ? 'locked' : 'disabled');
+        }
+        const statusSpan = wrap.querySelector('.actions-status-text');
+        if (statusSpan) {
+          if (val === 'edit') statusSpan.textContent = '⚡ Action capabilities allowed during Edit access:';
+          else if (val === 'view') statusSpan.textContent = '👁️ Page set to View Only (Editing actions locked)';
+          else statusSpan.textContent = '🚫 Page Hidden (No access)';
         }
       }
     }
     const form = event.target.closest('form');
-    if (form && form.id === 'form-user-permissions') {
+    if (form) {
       updatePermMatrixSummary(form);
     }
     return;
   }
   if (event.target.classList.contains('perm-action-checkbox')) {
-    const box = event.target.closest('.perm-action-box');
-    if (box) {
-      if (event.target.checked) box.classList.add('checked');
-      else box.classList.remove('checked');
+    const chip = event.target.closest('.perm-action-chip') || event.target.closest('.perm-action-box');
+    if (chip) {
+      if (event.target.checked) {
+        chip.classList.add(chip.classList.contains('perm-action-chip') ? 'on' : 'checked');
+      } else {
+        chip.classList.remove('on', 'checked');
+      }
     }
     const form = event.target.closest('form');
-    if (form && form.id === 'form-user-permissions') {
+    if (form) {
       updatePermMatrixSummary(form);
     }
     return;
@@ -5033,7 +5065,10 @@ async function signUp(form) {
 }
 
 async function savePerson(id) {
-  if (!can('users_manage') && user.role !== 'Admin') return;
+  if (!isAdmin() && !can('users_manage')) {
+    toast('Only administrators can update users.');
+    return;
+  }
   const role = document.querySelector(`[data-person="${CSS.escape(id)}"][data-field="role"]`)?.value;
   const active = document.querySelector(`[data-person="${CSS.escape(id)}"][data-field="active"]`)?.value === 'Active';
   if (!role) return;
@@ -5058,12 +5093,15 @@ async function savePerson(id) {
 }
 
 async function saveUserPermissions(form) {
-  if (!can('users_manage') && user.role !== 'Admin') return;
+  if (!isAdmin() && !can('users_manage')) {
+    toast('Only administrators can update user authorizations.');
+    return;
+  }
   const id = form.dataset.id;
   const permissions = {};
 
   MODULE_PERMISSIONS.forEach((m) => {
-    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`);
+    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`) || form.querySelector(`input[name$="page_${m.pageId}"]:checked`);
     permissions['page_' + m.pageId] = rad ? rad.value : 'none';
   });
 
@@ -5074,26 +5112,39 @@ async function saveUserPermissions(form) {
     permissions[def.key] = isPageEdit && input ? input.checked : false;
   });
 
+  // Always cache locally so permissions take effect immediately
+  try {
+    localStorage.setItem('malda_user_perms_' + id, JSON.stringify(permissions));
+  } catch {}
+
+  const person = people.find((p) => p.id === id);
+  if (person) {
+    person.permissions = permissions;
+  }
+  if (sessionUser?.id === id) {
+    user.permissions = permissions;
+    if (!canOpen(currentPage)) currentPage = 'home';
+  }
+
   try {
     await remote.saveProfile(id, { permissions });
-    const person = people.find((p) => p.id === id);
-    if (person) {
-      person.permissions = permissions;
-    }
-    if (sessionUser?.id === id) {
-      user.permissions = permissions;
-      if (!canOpen(currentPage)) currentPage = 'home';
-    }
-    entryModal = null;
-    toast('Custom authorizations matrix updated successfully');
-    paint();
+    toast(`Authorizations for ${person ? person.name : 'user'} saved successfully!`);
   } catch (err) {
-    toast(err.message || 'Failed to update authorizations');
+    if (/permissions/i.test(err.message || '')) {
+      toast('Authorizations saved locally. Run custom_authorization_migration.sql in Supabase to sync across devices.');
+    } else {
+      toast(err.message || 'Saved locally, but failed to sync to cloud');
+    }
   }
+
+  entryModal = null;
+  paint();
 }
 
 async function createUserAccount(form) {
-  if (!can('users_manage') && user.role !== 'Admin') return;
+  if (!isAdmin() && !can('users_manage')) {
+    return setMsg(form, 'Only administrators can create user accounts.');
+  }
   const name = field(form, 'name');
   const userId = field(form, 'userId');
   const pin = field(form, 'pin');
@@ -5105,7 +5156,7 @@ async function createUserAccount(form) {
 
   const permissions = {};
   MODULE_PERMISSIONS.forEach((m) => {
-    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`);
+    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`) || form.querySelector(`input[name$="page_${m.pageId}"]:checked`);
     permissions['page_' + m.pageId] = rad ? rad.value : (ROLE_DEFAULT_PAGE_ACCESS[role]?.[m.pageId] || 'none');
   });
 
@@ -5129,7 +5180,10 @@ async function createUserAccount(form) {
 }
 
 async function resetUserPin(id, name) {
-  if (!can('users_manage') && user.role !== 'Admin') return;
+  if (!isAdmin() && !can('users_manage')) {
+    toast('Only administrators can reset PINs.');
+    return;
+  }
   const newPin = prompt(`Enter new PIN or Password for ${name || 'user'}:`);
   if (!newPin || !newPin.trim()) return;
 

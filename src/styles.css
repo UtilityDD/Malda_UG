@@ -1979,6 +1979,7 @@ tfoot tr.boq-foot-row td {
 .perm-pill-toggle .pill-opt {
   display: inline-flex;
   align-items: center;
+  position: relative;
   padding: 3px 8px;
   font-size: 11px;
   font-weight: 600;
@@ -1990,26 +1991,34 @@ tfoot tr.boq-foot-row td {
 }
 
 .perm-pill-toggle .pill-opt input[type="radio"] {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  margin: 0;
 }
 
 .perm-pill-toggle .pill-opt:hover {
   color: #0f172a;
 }
 
-.perm-pill-toggle .pill-opt.active.pill-edit {
+.perm-pill-toggle .pill-opt.active.pill-edit,
+.perm-pill-toggle .pill-opt:has(input[value="edit"]:checked) {
   background: #2563eb;
   color: #ffffff;
   font-weight: 700;
 }
 
-.perm-pill-toggle .pill-opt.active.pill-view {
+.perm-pill-toggle .pill-opt.active.pill-view,
+.perm-pill-toggle .pill-opt:has(input[value="view"]:checked) {
   background: #0284c7;
   color: #ffffff;
   font-weight: 700;
 }
 
-.perm-pill-toggle .pill-opt.active.pill-none {
+.perm-pill-toggle .pill-opt.active.pill-none,
+.perm-pill-toggle .pill-opt:has(input[value="none"]:checked) {
   background: #e11d48;
   color: #ffffff;
   font-weight: 700;
@@ -2048,7 +2057,8 @@ tfoot tr.boq-foot-row td {
   background: #f8fafc;
 }
 
-.perm-action-chip.on {
+.perm-action-chip.on,
+.perm-action-chip:has(input:checked) {
   background: #eff6ff;
   border-color: #3b82f6;
   color: #1d4ed8;
