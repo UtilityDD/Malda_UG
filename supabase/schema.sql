@@ -1248,7 +1248,8 @@ create or replace function public.admin_rectify_offer(
   p_memo_no text default null,
   p_action_date date default null,
   p_action_remarks text default null,
-  p_status text default null
+  p_status text default null,
+  p_new_class text default null
 )
 returns void
 language plpgsql
@@ -1273,13 +1274,14 @@ begin
     memo_no = case when p_memo_no is not null then trim(p_memo_no) else memo_no end,
     action_date = case when p_action_date is not null then p_action_date else action_date end,
     action_remarks = case when p_action_remarks is not null then trim(p_action_remarks) else action_remarks end,
-    status = case when p_status is not null and p_status != '' then p_status else status end
+    status = case when p_status is not null and p_status != '' then p_status else status end,
+    class = case when p_new_class in ('Local', 'Central') then p_new_class else class end
   where offer_no = p_old_offer_no
     and (p_item_sl is null or item_sl = p_item_sl);
 end;
 $$;
 
-grant execute on function public.admin_rectify_offer(text, text, date, text, text, text, integer, text, date, text, text) to authenticated;
+grant execute on function public.admin_rectify_offer(text, text, date, text, text, text, integer, text, date, text, text, text) to authenticated;
 
 
 

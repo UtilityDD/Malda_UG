@@ -1778,7 +1778,54 @@ tfoot tr.boq-foot-row td {
   margin-top: 6px;
 }
 
+.class-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+  line-height: 1.3;
+}
+.class-toggle-btn.local {
+  background: #e0e7ff;
+  color: #3730a3;
+  border-color: #c7d2fe;
+}
+.class-toggle-btn.local:hover {
+  background: #c7d2fe;
+  border-color: #a5b4fc;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.class-toggle-btn.central {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border-color: #e9d5ff;
+}
+.class-toggle-btn.central:hover {
+  background: #e9d5ff;
+  border-color: #d8b4fe;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.class-toggle-btn .toggle-icon {
+  font-size: 11px;
+  opacity: 0.7;
+}
 
-
-
-
+.office-switch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}

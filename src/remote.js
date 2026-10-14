@@ -439,7 +439,8 @@ export async function rectifyOffer(
   memoNo = null,
   actionDate = null,
   actionRemarks = null,
-  status = null
+  status = null,
+  newClass = null
 ) {
   const { error } = await supabase.rpc('admin_rectify_offer', {
     p_old_offer_no: oldOfferNo,
@@ -452,7 +453,8 @@ export async function rectifyOffer(
     p_memo_no: memoNo !== null ? memoNo : null,
     p_action_date: actionDate || null,
     p_action_remarks: actionRemarks !== null ? actionRemarks : null,
-    p_status: status || null
+    p_status: status || null,
+    p_new_class: newClass || null
   });
 
   if (!error) return;
@@ -468,6 +470,7 @@ export async function rectifyOffer(
   if (actionDate) updateFields.action_date = actionDate;
   if (actionRemarks !== null) updateFields.action_remarks = actionRemarks;
   if (status) updateFields.status = status;
+  if (newClass) updateFields.class = newClass;
 
   let query = supabase.from('offers').update(updateFields).eq('offer_no', oldOfferNo);
   if (itemSl) query = query.eq('item_sl', itemSl);

@@ -2006,11 +2006,15 @@ function summaryTable(materials) {
     const name = clickable
       ? `<button type="button" class="row-link" data-action="open-inspect" data-sl="${item.slNo}">${esc(materialName(item))}</button> ${offerBtn}`
       : `${esc(materialName(item))} ${offerBtn}`;
+    const canChangeOffice = isAdmin() || isRegion();
+    const officeCell = canChangeOffice
+      ? `<button type="button" class="class-toggle-btn ${track.className === 'Local' ? 'local' : 'central'}" data-action="toggle-class" data-sl="${item.slNo}" title="Click to toggle Office: currently ${track.className === 'Local' ? 'Local (RM/ZM)' : 'Central (HQ/ZM)'}">${track.className} <span class="toggle-icon">⇄</span></button>`
+      : classBadge(track.className);
     return `
       <tr class="${clickable ? 'pick' : ''}" ${clickable ? `data-action="open-inspect" data-sl="${item.slNo}"` : ''} data-q="${esc(searchText(item, materialName(item), track.className, stage.text, blob))}">
         <td>${item.slNo}</td>
         <td class="desc" title="${esc(item.description)}">${name}</td>
-        <td>${classBadge(track.className)}</td>
+        <td>${officeCell}</td>
         <td class="num">${qtyText(item.loaQty, item.unit)}</td>
         <td class="num">${surveyText(item)}</td>
         <td class="num">${qtyText(track.approved, item.unit)}</td>
@@ -2324,6 +2328,13 @@ function inspEditOfferModal(group) {
         <input name="newPremises" required value="${esc(group.premises || '')}" placeholder="e.g. Works at Alwar, Rajasthan" />
       </label>
 
+      <label>Inspection Office
+        <select name="newClass" style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
+          <option value="Central"${(firstOffer.class || group.class) === 'Central' ? ' selected' : ''}>Central (HQ/ZM)</option>
+          <option value="Local"${(firstOffer.class || group.class) === 'Local' ? ' selected' : ''}>Local (RM/ZM)</option>
+        </select>
+      </label>
+
       <label class="span-2">Agency Offer Remarks / Comment
         <input name="newRemarks" value="${esc(firstOffer.remarks || '')}" placeholder="Optional remarks" />
       </label>
@@ -2446,7 +2457,17 @@ function inspectModal(item) {
       </div>
       <button type="button" class="ghost" data-action="close-modal">Close</button>
     </div>
-    ${canAct && inspModal.mode === 'offer' ? `${classSwitch(item)}<p class="quiet">New offers use this office. Saved offers keep theirs.</p>` : ''}
+    ${canAct ? `
+      <div class="office-switch-bar">
+        <span style="font-size: 13px; font-weight: 500;">
+          Inspection Office: <strong>${officeName(track.className)} (${track.className})</strong>
+        </span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="quiet" style="font-size: 11px; margin: 0;">Change to:</span>
+          ${classSwitch(item)}
+        </div>
+      </div>
+    ` : ''}
     ${modalBody(item, track)}
   `;
 }
@@ -2463,8 +2484,8 @@ function classSwitch(item) {
   const current = supplyClass(item);
   return `
     <div class="choice">
-      <button type="button" class="choice-btn${current === 'Local' ? ' active' : ''}" data-action="set-class" data-class="Local" data-sl="${item.slNo}">Local</button>
-      <button type="button" class="choice-btn${current === 'Central' ? ' active' : ''}" data-action="set-class" data-class="Central" data-sl="${item.slNo}">Central</button>
+      <button type="button" class="choice-btn${current === 'Local' ? ' active' : ''}" data-action="set-class" data-class="Local" data-sl="${item.slNo}">Local (RM/ZM)</button>
+      <button type="button" class="choice-btn${current === 'Central' ? ' active' : ''}" data-action="set-class" data-class="Central" data-sl="${item.slNo}">Central (HQ/ZM)</button>
     </div>
   `;
 }
@@ -2962,6 +2983,7 @@ function boqModal() {
 
 function boqFields(item) {
   const erection = item && String(item.part).includes('Erection');
+  const currentClass = item ? supplyClass(item) : 'Central';
   return `
     <label>Part
       <select name="part">
@@ -2970,6 +2992,12 @@ function boqFields(item) {
       </select>
     </label>
     <label>Category <input name="category" required value="${item ? esc(item.category) : ''}" placeholder="Cables / HDD / RMU" /></label>
+    <label>Office (Inspection)
+      <select name="supplyClass">
+        <option value="Central"${currentClass === 'Central' ? ' selected' : ''}>Central (HQ/ZM)</option>
+        <option value="Local"${currentClass === 'Local' ? ' selected' : ''}>Local (RM/ZM)</option>
+      </select>
+    </label>
     <label>Unit <input name="unit" required value="${item ? esc(item.unit) : ''}" placeholder="M / KM / SET" /></label>
     <label>LOA qty <input name="loa" type="number" min="0" step="any" required value="${item ? esc(item.loaQty) : ''}" /></label>
     <label class="span-2">Description <input name="description" required value="${item ? esc(item.description) : ''}" /></label>
@@ -2991,6 +3019,12 @@ function gtpNewMaterialModal() {
       
       <label class="span-2">Material Name / Description
         <input name="description" required placeholder="e.g. 33kV 3C x 300 sqmm XLPE Cable" />
+      </label>
+      <label>Office (Inspection)
+        <select name="supplyClass">
+          <option value="Central">Central (HQ/ZM)</option>
+          <option value="Local">Local (RM/ZM)</option>
+        </select>
       </label>
       <label>Unit
         <input name="unit" required placeholder="M / KM / SET / NOS" />
@@ -4133,6 +4167,15 @@ function onClick(event) {
     setSupplyClass(Number(button.dataset.sl), button.dataset.class);
     return;
   }
+  if (action === 'toggle-class') {
+    const sl = Number(button.dataset.sl);
+    const item = findItem(sl);
+    if (!item) return;
+    const current = supplyClass(item);
+    const nextClass = current === 'Local' ? 'Central' : 'Local';
+    setSupplyClass(sl, nextClass);
+    return;
+  }
   if (action === 'pick-decision') {
     pickDecision(button);
     return;
@@ -4803,6 +4846,7 @@ async function saveBoq(form) {
   const unit = field(form, 'unit');
   const category = field(form, 'category') || 'Material';
   const part = field(form, 'part') || 'Part-A (Material)';
+  const supplyClass = field(form, 'supplyClass') || (category === 'Hardware' ? 'Local' : 'Central');
   const loa = Number(field(form, 'loa'));
   const rateStr = field(form, 'rate');
   const rate = rateStr !== '' && !isNaN(Number(rateStr)) ? Number(rateStr) : 0;
@@ -4816,6 +4860,7 @@ async function saveBoq(form) {
     slNo: sl === 0 ? boqItems.reduce((max, item) => Math.max(max, item.slNo), 0) + 1 : sl,
     part,
     category,
+    supplyClass,
     description,
     unit,
     rate,
@@ -5089,6 +5134,7 @@ async function saveEditOffer(form) {
   const newMemoNo = field(form, 'newMemoNo');
   const newActionDate = field(form, 'newActionDate');
   const newActionRemarks = field(form, 'newActionRemarks');
+  const newClass = field(form, 'newClass');
 
   if (!newOfferNo || !newManufacturer) {
     return setMsg(form, 'Please enter Offer Letter No. and Manufacturer Name.');
@@ -5107,7 +5153,8 @@ async function saveEditOffer(form) {
       newMemoNo,
       newActionDate,
       newActionRemarks,
-      newStatus
+      newStatus,
+      newClass
     );
     await pullRegister();
     inspModal = null;
