@@ -6085,6 +6085,8 @@ async function saveFeederSurvey(form) {
 
   const totalDtrNos = dtr100 + dtr160 + dtr250 + dtr315 + dtr500 + dtr630;
   const totalDtrKva = (dtr100 * 100) + (dtr160 * 160) + (dtr250 * 250) + (dtr315 * 315) + (dtr500 * 500) + (dtr630 * 630);
+  const dtrTotalNos = totalDtrNos;
+  const dtrTotalKva = totalDtrKva;
 
   const dtrParts = [];
   if (dtr630 > 0) dtrParts.push(`630 kVA (${dtr630})`);
@@ -6113,7 +6115,7 @@ async function saveFeederSurvey(form) {
     dtrOther,
     dtrNotes,
     dtrTotalNos: totalDtrNos,
-    dtrTotalKva,
+    dtrTotalKva: totalDtrKva,
     dtrDetails: dtrDetails || '—',
     termKit400: Number(field(form, 'termKit400')) || 0,
     termKit185: Number(field(form, 'termKit185')) || 0,
