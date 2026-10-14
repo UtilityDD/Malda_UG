@@ -24,20 +24,78 @@ const ROLE_PAGES = {
   Admin: ['home', 'boq', 'gtp', 'di', 'receive', 'billing', 'daily', 'users']
 };
 
-export const PERMISSION_DEFS = [
-  { key: 'survey_entry', label: 'Feeder Survey Entry', desc: 'Add, edit & delete feeder survey measurements', icon: '🗺️' },
-  { key: 'boq_edit', label: 'Contract & Milestones', desc: 'Edit LOA baseline, BGs, milestones & EOTs', icon: '📋' },
-  { key: 'gtp_submit', label: 'GTP Submission', desc: 'Upload & submit vendor GTP documents', icon: '📑' },
-  { key: 'gtp_approve', label: 'GTP Approval', desc: 'Review, approve, or reject vendor GTP submissions', icon: '✅' },
-  { key: 'di_offer', label: 'Inspection Offer', desc: 'Submit material inspection call / offers', icon: '🔍' },
-  { key: 'di_issue', label: 'DI Issuance', desc: 'Approve inspection and issue Dispatch Instruction', icon: '🚚' },
-  { key: 'receive_record', label: 'Material Receive (Store)', desc: 'Record store receipts and stock entries', icon: '📦' },
-  { key: 'billing_submit', label: 'Vendor Billing', desc: 'Submit supply and erection invoices', icon: '💰' },
-  { key: 'billing_pay', label: 'Payment Processing', desc: 'Verify invoices and record payments', icon: '💳' },
-  { key: 'daily_log', label: 'Daily Progress (DPR)', desc: 'Log daily cable laying and site progress', icon: '🚜' },
-  { key: 'daily_verify', label: 'DPR Verification', desc: 'Verify and certify daily site progress', icon: '✔️' },
-  { key: 'users_manage', label: 'User Admin', desc: 'Manage user logins and custom authorizations', icon: '👥' }
+export const MODULE_PERMISSIONS = [
+  {
+    pageId: 'boq',
+    label: 'BOQ, Contract & Feeder Survey',
+    icon: '📊',
+    desc: 'LOA baseline, contract milestones, Bank Guarantees, Time Extensions & Feeder route survey',
+    actions: [
+      { key: 'survey_entry', label: 'Feeder Survey Entry', desc: 'Add, edit & delete feeder survey measurements', icon: '🗺️' },
+      { key: 'boq_edit', label: 'Contract Baseline & Milestones', desc: 'Edit LOA baseline, BGs, milestones & EOTs', icon: '📋' }
+    ]
+  },
+  {
+    pageId: 'gtp',
+    label: 'GTP / Vendor Document Approvals',
+    icon: '📑',
+    desc: 'Technical GTP documents, vendor approval letters & status decisions',
+    actions: [
+      { key: 'gtp_submit', label: 'Vendor GTP Submission', desc: 'Upload & submit vendor GTP documents', icon: '📤' },
+      { key: 'gtp_approve', label: 'GTP Approval & Decisions', desc: 'Review, approve, hold, or reject vendor GTP submissions', icon: '✅' }
+    ]
+  },
+  {
+    pageId: 'di',
+    label: 'Inspection & Dispatch Instructions (DI)',
+    icon: '🔍',
+    desc: 'Inspection calls, material clearance, factory inspection & DI memos',
+    actions: [
+      { key: 'di_offer', label: 'Inspection Offer Call', desc: 'Submit material inspection call / offers', icon: '🔎' },
+      { key: 'di_issue', label: 'DI Issuance & Approval', desc: 'Approve inspection and issue Dispatch Instruction', icon: '🚚' }
+    ]
+  },
+  {
+    pageId: 'receive',
+    label: 'Material Receive (Store)',
+    icon: '📦',
+    desc: 'Store receipt vouchers (SRV), physical material deliveries & stock register',
+    actions: [
+      { key: 'receive_record', label: 'Store Receipt Entry', desc: 'Record store receipts, SRVs and material intake', icon: '📥' }
+    ]
+  },
+  {
+    pageId: 'billing',
+    label: 'Vendor Billing & Invoices',
+    icon: '💰',
+    desc: 'Supply and erection bills, GST/SD deductions, payment processing',
+    actions: [
+      { key: 'billing_submit', label: 'Submit Invoices', desc: 'Submit supply and erection invoices', icon: '💵' },
+      { key: 'billing_pay', label: 'Verify & Mark Paid', desc: 'Verify invoices, certify payments and record payment dates', icon: '💳' }
+    ]
+  },
+  {
+    pageId: 'daily',
+    label: 'Daily Progress (DPR) & Site Logs',
+    icon: '🚜',
+    desc: 'Daily cable laying, erection, feeder-wise DPR, site activity logs',
+    actions: [
+      { key: 'daily_log', label: 'Log Daily DPR Progress', desc: 'Enter daily cable laying and site progress logs', icon: '📝' },
+      { key: 'daily_verify', label: 'DPR Verification', desc: 'Inspect, verify and certify daily site progress', icon: '✔️' }
+    ]
+  },
+  {
+    pageId: 'users',
+    label: 'User & Access Administration',
+    icon: '👥',
+    desc: 'Manage user logins, roles, credentials, and custom authorizations',
+    actions: [
+      { key: 'users_manage', label: 'Manage Users & Permissions', desc: 'Create users, reset PINs, toggle authorizations', icon: '👑' }
+    ]
+  }
 ];
+
+export const PERMISSION_DEFS = MODULE_PERMISSIONS.flatMap((m) => m.actions);
 
 export const ROLE_DEFAULT_PERMISSIONS = {
   Admin: {
@@ -87,7 +145,26 @@ export const ROLE_DEFAULT_PERMISSIONS = {
   }
 };
 
+export const ROLE_DEFAULT_PAGE_ACCESS = {
+  Admin: { boq: 'edit', gtp: 'edit', di: 'edit', receive: 'edit', billing: 'edit', daily: 'edit', users: 'edit' },
+  Division: { boq: 'edit', gtp: 'edit', di: 'edit', receive: 'view', billing: 'view', daily: 'edit', users: 'none' },
+  Divisional: { boq: 'edit', gtp: 'edit', di: 'edit', receive: 'view', billing: 'view', daily: 'edit', users: 'none' },
+  Region: { boq: 'edit', gtp: 'edit', di: 'edit', receive: 'view', billing: 'edit', daily: 'edit', users: 'none' },
+  WBSEDCL: { boq: 'edit', gtp: 'edit', di: 'edit', receive: 'view', billing: 'edit', daily: 'edit', users: 'none' },
+  Vendor: { boq: 'view', gtp: 'edit', di: 'edit', receive: 'none', billing: 'edit', daily: 'edit', users: 'none' },
+  Turnkey: { boq: 'view', gtp: 'edit', di: 'edit', receive: 'none', billing: 'edit', daily: 'edit', users: 'none' },
+  Store: { boq: 'view', gtp: 'none', di: 'none', receive: 'edit', billing: 'none', daily: 'none', users: 'none' },
+  Viewer: { boq: 'view', gtp: 'view', di: 'view', receive: 'view', billing: 'view', daily: 'view', users: 'none' }
+};
+
 let simulatedRole = null;
+
+function pageForPerm(permKey) {
+  for (const mod of MODULE_PERMISSIONS) {
+    if (mod.actions.some((a) => a.key === permKey)) return mod.pageId;
+  }
+  return 'home';
+}
 
 function getUserPermissions(targetUser) {
   if (!targetUser) return {};
@@ -98,13 +175,46 @@ function getUserPermissions(targetUser) {
   return ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.Viewer;
 }
 
+function pageAccess(pageId, targetUser = user) {
+  if (pageId === 'home') return 'view';
+  if (!targetUser || !targetUser.active) return 'none';
+  if (sessionUser && targetUser.role === 'Admin' && simulatedRole) {
+    const simDefaults = ROLE_DEFAULT_PAGE_ACCESS[simulatedRole] || ROLE_DEFAULT_PAGE_ACCESS.Viewer;
+    return simDefaults[pageId] || 'none';
+  }
+  if (targetUser.role === 'Admin') return 'edit';
+  const perms = getUserPermissions(targetUser);
+  const key = 'page_' + pageId;
+  if (perms && typeof perms[key] === 'string' && (perms[key] === 'edit' || perms[key] === 'view' || perms[key] === 'none')) {
+    return perms[key];
+  }
+  const role = targetUser.role || 'Viewer';
+  const roleDefaults = ROLE_DEFAULT_PAGE_ACCESS[role] || ROLE_DEFAULT_PAGE_ACCESS.Viewer;
+  return roleDefaults[pageId] || 'none';
+}
+
+function canOpen(pageId) {
+  if (pageId === 'home') return true;
+  return pageAccess(pageId) !== 'none';
+}
+
+function canEditPage(pageId) {
+  return pageAccess(pageId) === 'edit';
+}
+
 function can(permKey) {
   if (!user || !user.active) return false;
   if (sessionUser && user.role === 'Admin' && simulatedRole) {
     const simDefaults = ROLE_DEFAULT_PERMISSIONS[simulatedRole] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+    const simPageAccess = (ROLE_DEFAULT_PAGE_ACCESS[simulatedRole] || ROLE_DEFAULT_PAGE_ACCESS.Viewer)[pageForPerm(permKey)] || 'none';
+    if (simPageAccess !== 'edit') return false;
     return Boolean(simDefaults[permKey]);
   }
   if (user.role === 'Admin') return true;
+
+  const parentPage = pageForPerm(permKey);
+  if (pageAccess(parentPage) !== 'edit') return false;
+
   const perms = getUserPermissions(user);
   return Boolean(perms[permKey]);
 }
@@ -117,22 +227,32 @@ function effectiveRole() {
 function roleKey() {
   return String(effectiveRole()).trim().toLowerCase();
 }
+
 function isAdmin() {
   if (sessionUser && user.role === 'Admin' && simulatedRole) return simulatedRole === 'Admin';
-  return user.role === 'Admin' || can('users_manage');
+  return user.role === 'Admin' || (can('users_manage') && canEditPage('users'));
 }
-function isRegion() {
+
+function isRegion(pageId = '') {
+  if (pageId && !canEditPage(pageId)) return false;
   return can('boq_edit') || can('gtp_approve') || can('billing_pay') || isAdmin();
 }
-function isDivision() {
+
+function isDivision(pageId = '') {
+  if (pageId && !canEditPage(pageId)) return false;
   return can('survey_entry') || isRegion() || isAdmin();
 }
-function isVendor() {
+
+function isVendor(pageId = '') {
+  if (pageId && !canEditPage(pageId)) return false;
   return can('gtp_submit') || can('di_offer') || can('billing_submit') || can('daily_log');
 }
-function isStore() {
+
+function isStore(pageId = '') {
+  if (pageId && !canEditPage(pageId)) return false;
   return can('receive_record');
 }
+
 function isViewer() {
   return !isAdmin() && !isDivision() && !isVendor() && !isStore();
 }
@@ -455,18 +575,26 @@ function renderUsers() {
       : person.email;
 
     const perms = getUserPermissions(person);
-    const enabledPerms = PERMISSION_DEFS.filter((d) => Boolean(perms[d.key]));
-    const enabledCount = enabledPerms.length;
+    const editPages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'edit');
+    const viewPages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'view');
+    const nonePages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'none');
+    const activeActions = PERMISSION_DEFS.filter((d) => Boolean(perms[d.key])).length;
 
     let badgesHtml = '';
-    if (enabledCount === PERMISSION_DEFS.length) {
-      badgesHtml = '<span class="badge ok" style="font-size: 11px;">👑 All 12 (Full Access)</span>';
-    } else if (enabledCount === 0) {
-      badgesHtml = '<span class="badge bad" style="font-size: 11px;">🚫 None (Blocked)</span>';
+    if (person.role === 'Admin') {
+      badgesHtml = '<span class="badge ok" style="font-size: 11px;">👑 Full Admin (All Edit)</span>';
+    } else if (editPages.length === 0 && viewPages.length === 0) {
+      badgesHtml = '<span class="badge bad" style="font-size: 11px;">🚫 No Page Access</span>';
+    } else if (editPages.length === 0 && viewPages.length > 0) {
+      badgesHtml = `<span class="badge wait" style="font-size: 11px;">👁️ View Only (${viewPages.length} Pages)</span>`;
     } else {
-      const topBadges = enabledPerms.slice(0, 3).map((d) => `<span class="perm-pill">${d.icon} ${esc(d.label.split(' ')[0])}</span>`).join(' ');
-      const extra = enabledCount > 3 ? `<span class="perm-pill-more">+${enabledCount - 3} more</span>` : '';
-      badgesHtml = `<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">${topBadges} ${extra}</div>`;
+      badgesHtml = `
+        <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+          <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700;">✏️ ${editPages.length} Edit</span>
+          ${viewPages.length > 0 ? `<span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600;">👁️ ${viewPages.length} View</span>` : ''}
+          ${nonePages.length > 0 ? `<span style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; padding: 1px 6px; font-size: 11px;">🚫 ${nonePages.length} Hidden</span>` : ''}
+        </div>
+      `;
     }
 
     return `
@@ -481,7 +609,7 @@ function renderUsers() {
             ${canManage ? `
               <div>
                 <button type="button" class="tiny primary" data-action="edit-user-perms" data-id="${esc(person.id)}" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 650; padding: 3px 9px;">
-                  <span>⚙️</span> Authorizations (${enabledCount}/12)
+                  <span>⚙️</span> Authorizations (${editPages.length} Edit · ${viewPages.length} View)
                 </button>
               </div>
             ` : ''}
@@ -511,11 +639,11 @@ function renderUsers() {
   });
 
   return `
-    ${head('People & Custom Authorizations', 'Create user accounts and configure granular on/off authorizations for each individual user.')}
+    ${head('People & User Authorizations', 'Create user accounts and configure selective Edit vs View authorizations for any page.')}
 
     <form class="auth-card" id="form-create-user" style="max-width: 100%; width: 100%; margin: 0 0 24px 0; box-shadow: none;">
-      <h2 style="margin: 0; font-size: 16px;">Create New User Account & Authorizations</h2>
-      <p style="margin-top: 2px; font-size: 12px; color: var(--muted);">Specify User ID, PIN, Name, and choose custom ON/OFF authorizations for the user.</p>
+      <h2 style="margin: 0; font-size: 16px;">Create New User Account & Authorizations Matrix</h2>
+      <p style="margin-top: 2px; font-size: 12px; color: var(--muted);">Specify User ID, PIN, Name, and choose selective Edit vs View page access with action capabilities.</p>
       
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px;">
         <label>Full Name
@@ -539,22 +667,62 @@ function renderUsers() {
         </label>
       </div>
 
-      <!-- Compact Checklist of 12 Authorizations with ON/OFF Switches -->
-      <div style="margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #f8fafc;">
+      <!-- Quick Preset & Module Matrix for New User Creation -->
+      <div style="margin-top: 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #f8fafc;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <span style="font-size: 12.5px; font-weight: 700; color: #1e293b;">
-            ⚙️ Turn Individual Authorizations ON / OFF for this User:
+            ⚙️ Selective Page Access (Edit / View Only / Hidden) & Actions:
           </span>
-          <span style="font-size: 11px; color: #64748b;">Preset auto-selects defaults; feel free to toggle any switch</span>
+          <span style="font-size: 11px; color: #64748b;">Role preset auto-selects defaults; you can customize any page</span>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px;">
-          ${PERMISSION_DEFS.map((def) => {
-            const defaultVendor = Boolean(ROLE_DEFAULT_PERMISSIONS.Vendor[def.key]);
+        
+        <div class="perm-matrix-wrap" style="max-height: 42vh;">
+          ${MODULE_PERMISSIONS.map((mod) => {
+            const defaultMode = (ROLE_DEFAULT_PAGE_ACCESS.Vendor || {})[mod.pageId] || 'none';
+            const isEdit = defaultMode === 'edit';
+            const isView = defaultMode === 'view';
+            const isNone = defaultMode === 'none';
+
             return `
-              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; cursor: pointer;">
-                <input type="checkbox" name="perm_${def.key}" ${defaultVendor ? 'checked' : ''} style="accent-color: #2563eb;" />
-                <span>${def.icon} <strong>${def.label}</strong></span>
-              </label>
+              <div class="perm-matrix-card mode-${defaultMode}" id="create-mod-card-${mod.pageId}">
+                <div class="perm-matrix-header" style="padding: 8px 12px;">
+                  <div class="perm-mod-info">
+                    <span class="perm-mod-icon" style="font-size: 18px;">${mod.icon}</span>
+                    <div>
+                      <div class="perm-mod-title" style="font-size: 12.5px;">${mod.label}</div>
+                    </div>
+                  </div>
+                  <div class="perm-seg-control">
+                    <label class="perm-seg-label seg-edit${isEdit ? ' active' : ''}">
+                      <input type="radio" name="page_${mod.pageId}" value="edit" ${isEdit ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
+                      <span>✏️ Edit</span>
+                    </label>
+                    <label class="perm-seg-label seg-view${isView ? ' active' : ''}">
+                      <input type="radio" name="page_${mod.pageId}" value="view" ${isView ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
+                      <span>👁️ View</span>
+                    </label>
+                    <label class="perm-seg-label seg-none${isNone ? ' active' : ''}">
+                      <input type="radio" name="page_${mod.pageId}" value="none" ${isNone ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
+                      <span>🚫 Hidden</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="perm-actions-container${!isEdit ? ' locked' : ''}" id="create-actions-wrap-${mod.pageId}" style="padding: 6px 12px 8px;">
+                  <div class="perm-actions-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px;">
+                    ${mod.actions.map((act) => {
+                      const isDefaultChecked = Boolean(ROLE_DEFAULT_PERMISSIONS.Vendor[act.key]);
+                      return `
+                        <label class="perm-action-box${isDefaultChecked && isEdit ? ' checked' : ''}" style="padding: 5px 8px; font-size: 11.5px;">
+                          <input type="checkbox" name="perm_${act.key}" ${isDefaultChecked ? 'checked' : ''} class="perm-action-checkbox" data-page="${mod.pageId}" />
+                          <div>
+                            <div class="perm-action-title">${act.icon} ${act.label}</div>
+                          </div>
+                        </label>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              </div>
             `;
           }).join('')}
         </div>
@@ -567,7 +735,7 @@ function renderUsers() {
     </form>
 
     <h2 style="font-size: 16px; margin: 16px 0 8px;">Existing User Accounts (${people.length})</h2>
-    ${table(['Name & User ID', 'Custom Authorizations (On / Off)', 'Role Preset', 'Access Status', 'Actions'], rows, 5, 'No logins yet.')}
+    ${table(['Name & User ID', 'Authorizations Matrix (Edit / View / Hidden)', 'Role Preset', 'Access Status', 'Actions'], rows, 5, 'No logins yet.')}
   `;
 }
 
@@ -577,13 +745,13 @@ function userPermissionsModal(person) {
     ? person.email.replace('@malda-ug.gov.in', '')
     : person.email;
   const currentPerms = getUserPermissions(person);
-  const enabledCount = PERMISSION_DEFS.filter((d) => Boolean(currentPerms[d.key])).length;
 
   return `
-    ${modalTitle('Custom User Authorizations', `Configure granular ON/OFF permissions for ${esc(person.name)} (${esc(shortId)})`)}
+    ${modalTitle('Custom User Authorizations Matrix', `Configure selective Edit vs View page access & action capabilities for ${esc(person.name)} (${esc(shortId)})`)}
+    
     <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin: 10px 0 14px;">
       <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
-        Quick Apply Preset:
+        Quick Apply Role Preset:
       </div>
       <div style="display: flex; flex-wrap: wrap; gap: 6px;">
         <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Admin">👑 Full Admin</button>
@@ -591,40 +759,179 @@ function userPermissionsModal(person) {
         <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Region">🏢 Region (DE)</button>
         <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Vendor">🚜 Turnkey / Vendor</button>
         <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Store">📦 Store Keeper</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Viewer">👁️ View Only</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="all" style="color: #2563eb; font-weight: 700;">Select All</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="none" style="color: #dc2626; font-weight: 700;">Clear All</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Viewer" style="color: #0284c7; font-weight: 700;">👁️ View Only All</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="all" style="color: #2563eb; font-weight: 700;">Select All Edit</button>
+        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="none" style="color: #dc2626; font-weight: 700;">Clear All Access</button>
       </div>
     </div>
 
     <form class="entry entry-plain" id="form-user-permissions" data-id="${esc(person.id)}">
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; max-height: 52vh; overflow-y: auto; padding: 2px;">
-        ${PERMISSION_DEFS.map((def) => {
-          const isChecked = Boolean(currentPerms[def.key]);
+      <div class="perm-matrix-wrap">
+        ${MODULE_PERMISSIONS.map((mod) => {
+          const pageMode = pageAccess(mod.pageId, person);
+          const isEdit = pageMode === 'edit';
+          const isView = pageMode === 'view';
+          const isNone = pageMode === 'none';
+
           return `
-            <label class="perm-toggle-card${isChecked ? ' active' : ''}" style="display: flex; align-items: center; justify-content: space-between; border: 1.5px solid ${isChecked ? '#2563eb' : '#e2e8f0'}; border-radius: 8px; padding: 10px 12px; background: ${isChecked ? '#eff6ff' : '#ffffff'}; cursor: pointer; transition: all 0.15s ease;">
-              <div style="display: flex; align-items: flex-start; gap: 9px; flex: 1; margin-right: 12px;">
-                <span style="font-size: 18px; line-height: 1.2;">${def.icon}</span>
-                <div>
-                  <div style="font-weight: 700; font-size: 13px; color: #0f172a;">${def.label}</div>
-                  <div style="font-size: 11px; color: #64748b; margin-top: 1px;">${def.desc}</div>
+            <div class="perm-matrix-card mode-${pageMode}" id="mod-card-${mod.pageId}">
+              <div class="perm-matrix-header">
+                <div class="perm-mod-info">
+                  <span class="perm-mod-icon">${mod.icon}</span>
+                  <div>
+                    <div class="perm-mod-title">${mod.label}</div>
+                    <div class="perm-mod-desc">${mod.desc}</div>
+                  </div>
+                </div>
+
+                <!-- 3-Way Segmented Radio for Selective Edit / View / Hidden -->
+                <div class="perm-seg-control" data-page="${mod.pageId}">
+                  <label class="perm-seg-label seg-edit${isEdit ? ' active' : ''}" title="Full or selective editing and submissions on this page">
+                    <input type="radio" name="page_${mod.pageId}" value="edit" ${isEdit ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
+                    <span>✏️ Edit</span>
+                  </label>
+                  <label class="perm-seg-label seg-view${isView ? ' active' : ''}" title="Read-only view: can view and search this page, but cannot edit or submit">
+                    <input type="radio" name="page_${mod.pageId}" value="view" ${isView ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
+                    <span>👁️ View Only</span>
+                  </label>
+                  <label class="perm-seg-label seg-none${isNone ? ' active' : ''}" title="Hide this page completely from user navigation">
+                    <input type="radio" name="page_${mod.pageId}" value="none" ${isNone ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
+                    <span>🚫 No Access</span>
+                  </label>
                 </div>
               </div>
-              <input type="checkbox" name="perm_${def.key}" ${isChecked ? 'checked' : ''} class="perm-switch" style="width: 18px; height: 18px; cursor: pointer; accent-color: #2563eb;" />
-            </label>
+
+              <!-- Granular Action Checkboxes for this Module -->
+              <div class="perm-actions-container${!isEdit ? ' locked' : ''}" id="actions-wrap-${mod.pageId}">
+                <div class="perm-actions-bar">
+                  <span class="actions-status-text">
+                    ${isEdit ? '⚡ Action capabilities allowed during Edit access:' : (isView ? '👁️ Page set to View Only (Editing actions locked)' : '🚫 Page Hidden (No access)')}
+                  </span>
+                </div>
+                <div class="perm-actions-grid">
+                  ${mod.actions.map((act) => {
+                    const isChecked = Boolean(currentPerms[act.key]);
+                    return `
+                      <label class="perm-action-box${isChecked && isEdit ? ' checked' : ''}">
+                        <input type="checkbox" name="perm_${act.key}" ${isChecked ? 'checked' : ''} class="perm-action-checkbox" data-page="${mod.pageId}" />
+                        <div>
+                          <div class="perm-action-title">${act.icon} ${act.label}</div>
+                          <div class="perm-action-desc">${act.desc}</div>
+                        </div>
+                      </label>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            </div>
           `;
         }).join('')}
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
-        <span style="font-size: 12px; color: #64748b;" id="perm-counter">${enabledCount} of 12 Authorizations Enabled</span>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+        <span style="font-size: 12px; color: #475569; font-weight: 600;" id="perm-matrix-summary">
+          <!-- Dynamic summary updated via JS -->
+        </span>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="ghost" data-action="close-dialog">Cancel</button>
-          <button type="submit" class="primary" style="font-weight: 700; padding: 8px 20px;">Save Authorizations</button>
+          <button type="submit" class="primary" style="font-weight: 700; padding: 8px 22px;">Save Authorizations Matrix</button>
         </div>
       </div>
     </form>
   `;
+}
+
+function updatePermMatrixSummary(form) {
+  if (!form) return;
+  let editCount = 0;
+  let viewCount = 0;
+  let noneCount = 0;
+  MODULE_PERMISSIONS.forEach((m) => {
+    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`);
+    const val = rad ? rad.value : 'none';
+    if (val === 'edit') editCount++;
+    else if (val === 'view') viewCount++;
+    else noneCount++;
+  });
+
+  let actCount = 0;
+  PERMISSION_DEFS.forEach((d) => {
+    const chk = form.querySelector(`input[name="perm_${d.key}"]`);
+    if (chk && chk.checked) actCount++;
+  });
+
+  const summaryEl = form.querySelector('#perm-matrix-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `<span style="color:#2563eb;">✏️ <strong>${editCount}</strong> Edit</span> &nbsp;·&nbsp; <span style="color:#0284c7;">👁️ <strong>${viewCount}</strong> View Only</span> &nbsp;·&nbsp; <span style="color:#e11d48;">🚫 <strong>${noneCount}</strong> Hidden</span> &nbsp;(${actCount} actions checked)`;
+  }
+}
+
+function applyPermPreset(form, preset) {
+  if (!form) return;
+  let pageAccessMap = {};
+  let actionPerms = {};
+
+  if (preset === 'all') {
+    MODULE_PERMISSIONS.forEach((m) => { pageAccessMap[m.pageId] = 'edit'; });
+    PERMISSION_DEFS.forEach((d) => { actionPerms[d.key] = true; });
+  } else if (preset === 'none') {
+    MODULE_PERMISSIONS.forEach((m) => { pageAccessMap[m.pageId] = 'none'; });
+    PERMISSION_DEFS.forEach((d) => { actionPerms[d.key] = false; });
+  } else if (preset === 'Viewer') {
+    MODULE_PERMISSIONS.forEach((m) => { pageAccessMap[m.pageId] = m.pageId === 'users' ? 'none' : 'view'; });
+    PERMISSION_DEFS.forEach((d) => { actionPerms[d.key] = false; });
+  } else {
+    pageAccessMap = ROLE_DEFAULT_PAGE_ACCESS[preset] || ROLE_DEFAULT_PAGE_ACCESS.Viewer;
+    actionPerms = ROLE_DEFAULT_PERMISSIONS[preset] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+  }
+
+  // Update Page Radios
+  MODULE_PERMISSIONS.forEach((m) => {
+    const val = pageAccessMap[m.pageId] || 'none';
+    const radio = form.querySelector(`input[name="page_${m.pageId}"][value="${val}"]`);
+    if (radio) radio.checked = true;
+
+    const card = form.querySelector(`#mod-card-${m.pageId}`) || form.querySelector(`#create-mod-card-${m.pageId}`);
+    if (card) {
+      card.className = `perm-matrix-card mode-${val}`;
+      const segLabels = card.querySelectorAll('.perm-seg-label');
+      segLabels.forEach((lbl) => {
+        const rad = lbl.querySelector('input');
+        if (rad && rad.value === val) lbl.classList.add('active');
+        else lbl.classList.remove('active');
+      });
+
+      const wrap = card.querySelector(`#actions-wrap-${m.pageId}`) || card.querySelector(`#create-actions-wrap-${m.pageId}`);
+      if (wrap) {
+        const statusSpan = wrap.querySelector('.actions-status-text');
+        if (val === 'edit') {
+          wrap.classList.remove('locked');
+          if (statusSpan) statusSpan.textContent = '⚡ Action capabilities allowed during Edit access:';
+        } else if (val === 'view') {
+          wrap.classList.add('locked');
+          if (statusSpan) statusSpan.textContent = '👁️ Page set to View Only (Editing actions locked)';
+        } else {
+          wrap.classList.add('locked');
+          if (statusSpan) statusSpan.textContent = '🚫 Page Hidden (No access)';
+        }
+      }
+    }
+  });
+
+  // Update Action Checkboxes
+  PERMISSION_DEFS.forEach((d) => {
+    const chk = form.querySelector(`input[name="perm_${d.key}"]`);
+    if (chk) {
+      chk.checked = Boolean(actionPerms[d.key]);
+      const box = chk.closest('.perm-action-box');
+      if (box) {
+        if (chk.checked) box.classList.add('checked');
+        else box.classList.remove('checked');
+      }
+    }
+  });
+
+  updatePermMatrixSummary(form);
 }
 
 function defaultContract() {
@@ -2182,6 +2489,9 @@ function syncInspectDialog() {
   }
   const inspDecisionForm = dialog.querySelector('#form-insp-decision-batch');
   if (inspDecisionForm) updateInspDecisionCount(inspDecisionForm);
+
+  const permModalForm = dialog.querySelector('#form-user-permissions');
+  if (permModalForm) updatePermMatrixSummary(permModalForm);
 
   if (!dialog.open) {
     inspectTimer = setTimeout(() => {
@@ -4403,39 +4713,8 @@ function onClick(event) {
     return;
   }
   if (action === 'perm-preset') {
-    const preset = button.dataset.preset;
     const modalForm = document.getElementById('form-user-permissions');
-    if (!modalForm) return;
-    let targetPerms = {};
-    if (preset === 'all') {
-      PERMISSION_DEFS.forEach((d) => { targetPerms[d.key] = true; });
-    } else if (preset === 'none') {
-      PERMISSION_DEFS.forEach((d) => { targetPerms[d.key] = false; });
-    } else {
-      targetPerms = ROLE_DEFAULT_PERMISSIONS[preset] || ROLE_DEFAULT_PERMISSIONS.Viewer;
-    }
-    let count = 0;
-    PERMISSION_DEFS.forEach((def) => {
-      const input = modalForm.elements[`perm_${def.key}`];
-      if (input) {
-        input.checked = Boolean(targetPerms[def.key]);
-        if (input.checked) count++;
-        const card = input.closest('.perm-toggle-card');
-        if (card) {
-          if (input.checked) {
-            card.classList.add('active');
-            card.style.borderColor = '#2563eb';
-            card.style.background = '#eff6ff';
-          } else {
-            card.classList.remove('active');
-            card.style.borderColor = '#e2e8f0';
-            card.style.background = '#ffffff';
-          }
-        }
-      }
-    });
-    const counter = document.getElementById('perm-counter');
-    if (counter) counter.textContent = `${count} of 12 Authorizations Enabled`;
+    if (modalForm) applyPermPreset(modalForm, button.dataset.preset);
     return;
   }
   if (action === 'fill-demo') {
@@ -4550,27 +4829,49 @@ function rejectInvoiceQty(input) {
 }
 
 function onChange(event) {
-  if (event.target.classList.contains('perm-switch')) {
-    const card = event.target.closest('.perm-toggle-card');
+  if (event.target.classList.contains('perm-page-radio')) {
+    const val = event.target.value;
+    const pageId = event.target.dataset.page;
+    const card = event.target.closest('.perm-matrix-card');
     if (card) {
-      if (event.target.checked) {
-        card.classList.add('active');
-        card.style.borderColor = '#2563eb';
-        card.style.background = '#eff6ff';
-      } else {
-        card.classList.remove('active');
-        card.style.borderColor = '#e2e8f0';
-        card.style.background = '#ffffff';
+      card.className = `perm-matrix-card mode-${val}`;
+      const segLabels = card.querySelectorAll('.perm-seg-label');
+      segLabels.forEach((lbl) => {
+        const rad = lbl.querySelector('input');
+        if (rad && rad.value === val) lbl.classList.add('active');
+        else lbl.classList.remove('active');
+      });
+
+      const wrap = card.querySelector(`#actions-wrap-${pageId}`) || card.querySelector(`#create-actions-wrap-${pageId}`);
+      if (wrap) {
+        const statusSpan = wrap.querySelector('.actions-status-text');
+        if (val === 'edit') {
+          wrap.classList.remove('locked');
+          if (statusSpan) statusSpan.textContent = '⚡ Action capabilities allowed during Edit access:';
+        } else if (val === 'view') {
+          wrap.classList.add('locked');
+          if (statusSpan) statusSpan.textContent = '👁️ Page set to View Only (Editing actions locked)';
+        } else {
+          wrap.classList.add('locked');
+          if (statusSpan) statusSpan.textContent = '🚫 Page Hidden (No access)';
+        }
       }
     }
-    const modalForm = document.getElementById('form-user-permissions');
-    if (modalForm) {
-      let count = 0;
-      PERMISSION_DEFS.forEach((def) => {
-        if (modalForm.elements[`perm_${def.key}`]?.checked) count++;
-      });
-      const counter = document.getElementById('perm-counter');
-      if (counter) counter.textContent = `${count} of 12 Authorizations Enabled`;
+    const form = event.target.closest('form');
+    if (form && form.id === 'form-user-permissions') {
+      updatePermMatrixSummary(form);
+    }
+    return;
+  }
+  if (event.target.classList.contains('perm-action-checkbox')) {
+    const box = event.target.closest('.perm-action-box');
+    if (box) {
+      if (event.target.checked) box.classList.add('checked');
+      else box.classList.remove('checked');
+    }
+    const form = event.target.closest('form');
+    if (form && form.id === 'form-user-permissions') {
+      updatePermMatrixSummary(form);
     }
     return;
   }
@@ -4578,11 +4879,7 @@ function onChange(event) {
     const preset = event.target.value;
     const form = event.target.closest('form');
     if (form) {
-      const defaults = ROLE_DEFAULT_PERMISSIONS[preset] || ROLE_DEFAULT_PERMISSIONS.Viewer;
-      PERMISSION_DEFS.forEach((def) => {
-        const input = form.elements[`perm_${def.key}`];
-        if (input) input.checked = Boolean(defaults[def.key]);
-      });
+      applyPermPreset(form, preset);
     }
     return;
   }
@@ -4765,9 +5062,17 @@ async function saveUserPermissions(form) {
   if (!can('users_manage') && user.role !== 'Admin') return;
   const id = form.dataset.id;
   const permissions = {};
+
+  MODULE_PERMISSIONS.forEach((m) => {
+    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`);
+    permissions['page_' + m.pageId] = rad ? rad.value : 'none';
+  });
+
   PERMISSION_DEFS.forEach((def) => {
-    const input = form.elements[`perm_${def.key}`];
-    permissions[def.key] = input ? input.checked : false;
+    const input = form.querySelector(`input[name="perm_${def.key}"]`);
+    const pageId = pageForPerm(def.key);
+    const isPageEdit = permissions['page_' + pageId] === 'edit';
+    permissions[def.key] = isPageEdit && input ? input.checked : false;
   });
 
   try {
@@ -4778,9 +5083,10 @@ async function saveUserPermissions(form) {
     }
     if (sessionUser?.id === id) {
       user.permissions = permissions;
+      if (!canOpen(currentPage)) currentPage = 'home';
     }
     entryModal = null;
-    toast('Custom authorizations updated successfully');
+    toast('Custom authorizations matrix updated successfully');
     paint();
   } catch (err) {
     toast(err.message || 'Failed to update authorizations');
@@ -4799,9 +5105,16 @@ async function createUserAccount(form) {
   }
 
   const permissions = {};
+  MODULE_PERMISSIONS.forEach((m) => {
+    const rad = form.querySelector(`input[name="page_${m.pageId}"]:checked`);
+    permissions['page_' + m.pageId] = rad ? rad.value : (ROLE_DEFAULT_PAGE_ACCESS[role]?.[m.pageId] || 'none');
+  });
+
   PERMISSION_DEFS.forEach((def) => {
-    const input = form.elements[`perm_${def.key}`];
-    permissions[def.key] = input ? input.checked : false;
+    const input = form.querySelector(`input[name="perm_${def.key}"]`);
+    const pageId = pageForPerm(def.key);
+    const isPageEdit = permissions['page_' + pageId] === 'edit';
+    permissions[def.key] = isPageEdit && input ? input.checked : Boolean(ROLE_DEFAULT_PERMISSIONS[role]?.[def.key]);
   });
 
   try {
@@ -6451,18 +6764,6 @@ function billedQty(item) {
 
 function billLeft(item) {
   return Math.max(0, billCap(item) - billedQty(item));
-}
-
-function canOpen(pageId) {
-  if (pageId === 'home') return true;
-  if (pageId === 'boq') return true;
-  if (pageId === 'gtp') return can('gtp_submit') || can('gtp_approve') || user.role === 'Viewer' || isAdmin();
-  if (pageId === 'di') return can('di_offer') || can('di_issue') || user.role === 'Viewer' || isAdmin();
-  if (pageId === 'receive') return can('receive_record') || user.role === 'Viewer' || isAdmin();
-  if (pageId === 'billing') return can('billing_submit') || can('billing_pay') || user.role === 'Viewer' || isAdmin();
-  if (pageId === 'daily') return can('daily_log') || can('daily_verify') || user.role === 'Viewer' || isAdmin();
-  if (pageId === 'users') return can('users_manage') || isAdmin();
-  return (ROLE_PAGES[effectiveRole()] || ROLE_PAGES.Turnkey).includes(pageId);
 }
 
 function head(title, hint) {
