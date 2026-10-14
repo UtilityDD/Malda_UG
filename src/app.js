@@ -26,47 +26,28 @@ const ROLE_PAGES = {
 
 export const MODULE_PERMISSIONS = [
   {
-    pageId: 'boq',
-    label: 'BOQ, Contract & Feeder Survey',
-    icon: '📊',
-    desc: 'LOA baseline, contract milestones, Bank Guarantees, Time Extensions & Feeder route survey',
-    actions: [
-      { key: 'survey_entry', label: 'Feeder Survey Entry', desc: 'Add, edit & delete feeder survey measurements', icon: '🗺️' },
-      { key: 'boq_edit', label: 'Contract Baseline & Milestones', desc: 'Edit LOA baseline, BGs, milestones & EOTs', icon: '📋' }
-    ]
-  },
-  {
     pageId: 'gtp',
-    label: 'GTP / Vendor Document Approvals',
+    label: 'GTP / Vendor',
     icon: '📑',
     desc: 'Technical GTP documents, vendor approval letters & status decisions',
     actions: [
-      { key: 'gtp_submit', label: 'Vendor GTP Submission', desc: 'Upload & submit vendor GTP documents', icon: '📤' },
-      { key: 'gtp_approve', label: 'GTP Approval & Decisions', desc: 'Review, approve, hold, or reject vendor GTP submissions', icon: '✅' }
+      { key: 'gtp_submit', label: 'Create / Submit Letters', desc: 'Create & submit GTP and Vendor approval letters', icon: '📤' },
+      { key: 'gtp_approve', label: 'Approve / Reject Letters', desc: 'Review, approve, hold, or reject letters & memos', icon: '✅' }
     ]
   },
   {
     pageId: 'di',
-    label: 'Inspection & Dispatch Instructions (DI)',
+    label: 'Inspection / DI',
     icon: '🔍',
     desc: 'Inspection calls, material clearance, factory inspection & DI memos',
     actions: [
-      { key: 'di_offer', label: 'Inspection Offer Call', desc: 'Submit material inspection call / offers', icon: '🔎' },
-      { key: 'di_issue', label: 'DI Issuance & Approval', desc: 'Approve inspection and issue Dispatch Instruction', icon: '🚚' }
-    ]
-  },
-  {
-    pageId: 'receive',
-    label: 'Material Receive (Store)',
-    icon: '📦',
-    desc: 'Store receipt vouchers (SRV), physical material deliveries & stock register',
-    actions: [
-      { key: 'receive_record', label: 'Store Receipt Entry', desc: 'Record store receipts, SRVs and material intake', icon: '📥' }
+      { key: 'di_offer', label: 'Offer Inspection Call', desc: 'Submit material inspection call / offers', icon: '🔎' },
+      { key: 'di_issue', label: 'Issue DI & Clearance', desc: 'Approve inspection and issue Dispatch Instruction', icon: '🚚' }
     ]
   },
   {
     pageId: 'billing',
-    label: 'Vendor Billing & Invoices',
+    label: 'Vendor Billing',
     icon: '💰',
     desc: 'Supply and erection bills, GST/SD deductions, payment processing',
     actions: [
@@ -76,21 +57,40 @@ export const MODULE_PERMISSIONS = [
   },
   {
     pageId: 'daily',
-    label: 'Daily Progress (DPR) & Site Logs',
+    label: 'Daily Progress',
     icon: '🚜',
     desc: 'Daily cable laying, erection, feeder-wise DPR, site activity logs',
     actions: [
-      { key: 'daily_log', label: 'Log Daily DPR Progress', desc: 'Enter daily cable laying and site progress logs', icon: '📝' },
-      { key: 'daily_verify', label: 'DPR Verification', desc: 'Inspect, verify and certify daily site progress', icon: '✔️' }
+      { key: 'daily_log', label: 'Log Daily DPR', desc: 'Enter daily cable laying and site progress logs', icon: '📝' },
+      { key: 'daily_verify', label: 'Verify Daily DPR', desc: 'Inspect, verify and certify daily site progress', icon: '✔️' }
+    ]
+  },
+  {
+    pageId: 'boq',
+    label: 'BOQ & Feeder Survey',
+    icon: '📊',
+    desc: 'LOA baseline, milestones, BGs, EOTs & Feeder route survey',
+    actions: [
+      { key: 'survey_entry', label: 'Feeder Survey Entry', desc: 'Add, edit & delete feeder survey measurements', icon: '🗺️' },
+      { key: 'boq_edit', label: 'Milestones, BGs & EOTs', desc: 'Edit LOA baseline, BGs, milestones & EOTs', icon: '📋' }
+    ]
+  },
+  {
+    pageId: 'receive',
+    label: 'Material Receive',
+    icon: '📦',
+    desc: 'Store receipt vouchers (SRV), physical material deliveries & stock register',
+    actions: [
+      { key: 'receive_record', label: 'Store Receipt (SRV)', desc: 'Record store receipts, SRVs and material intake', icon: '📥' }
     ]
   },
   {
     pageId: 'users',
-    label: 'User & Access Administration',
+    label: 'People & Admin',
     icon: '👥',
     desc: 'Manage user logins, roles, credentials, and custom authorizations',
     actions: [
-      { key: 'users_manage', label: 'Manage Users & Permissions', desc: 'Create users, reset PINs, toggle authorizations', icon: '👑' }
+      { key: 'users_manage', label: 'User & Access Admin', desc: 'Create users, reset PINs, toggle authorizations', icon: '👑' }
     ]
   }
 ];
@@ -565,11 +565,94 @@ function renderWaiting() {
   `;
 }
 
+function renderCompactPermTable(formPrefix, targetUserOrRole, isCreate = false) {
+  let perms = {};
+  let pageMap = {};
+
+  if (typeof targetUserOrRole === 'string') {
+    pageMap = ROLE_DEFAULT_PAGE_ACCESS[targetUserOrRole] || ROLE_DEFAULT_PAGE_ACCESS.Viewer;
+    perms = ROLE_DEFAULT_PERMISSIONS[targetUserOrRole] || ROLE_DEFAULT_PERMISSIONS.Viewer;
+  } else if (targetUserOrRole) {
+    perms = getUserPermissions(targetUserOrRole);
+    MODULE_PERMISSIONS.forEach((m) => {
+      pageMap[m.pageId] = pageAccess(m.pageId, targetUserOrRole);
+    });
+  }
+
+  const rows = MODULE_PERMISSIONS.map((mod) => {
+    const pageMode = pageMap[mod.pageId] || 'none';
+    const isEdit = pageMode === 'edit';
+    const isView = pageMode === 'view';
+    const isNone = pageMode === 'none';
+
+    const actionChips = mod.actions.map((act) => {
+      const isChecked = Boolean(perms[act.key]);
+      return `
+        <label class="perm-action-chip${isChecked && isEdit ? ' on' : ''}" title="${esc(act.desc)}">
+          <input type="checkbox" name="perm_${act.key}" ${isChecked ? 'checked' : ''} class="perm-action-checkbox" data-page="${mod.pageId}" data-prefix="${formPrefix}" />
+          <span>${act.icon} ${esc(act.label)}</span>
+        </label>
+      `;
+    }).join('');
+
+    return `
+      <tr class="perm-table-row mode-${pageMode}" id="${formPrefix}-row-${mod.pageId}">
+        <td class="perm-col-mod">
+          <div class="perm-mod-cell">
+            <span class="perm-mod-icon">${mod.icon}</span>
+            <div>
+              <strong class="perm-mod-name">${esc(mod.label)}</strong>
+              <span class="perm-mod-desc" title="${esc(mod.desc)}">${esc(mod.desc)}</span>
+            </div>
+          </div>
+        </td>
+        <td class="perm-col-access">
+          <div class="perm-pill-toggle">
+            <label class="pill-opt pill-edit${isEdit ? ' active' : ''}" title="Full or selective editing and action rights">
+              <input type="radio" name="page_${mod.pageId}" value="edit" ${isEdit ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" data-prefix="${formPrefix}" />
+              <span>✏️ Edit</span>
+            </label>
+            <label class="pill-opt pill-view${isView ? ' active' : ''}" title="Read-only: can view page content, cannot submit or edit">
+              <input type="radio" name="page_${mod.pageId}" value="view" ${isView ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" data-prefix="${formPrefix}" />
+              <span>👁️ View</span>
+            </label>
+            <label class="pill-opt pill-none${isNone ? ' active' : ''}" title="Hide page completely from navigation">
+              <input type="radio" name="page_${mod.pageId}" value="none" ${isNone ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" data-prefix="${formPrefix}" />
+              <span>🚫 Off</span>
+            </label>
+          </div>
+        </td>
+        <td class="perm-col-actions">
+          <div class="perm-actions-wrap${!isEdit ? ' disabled' : ''}" id="${formPrefix}-actions-wrap-${mod.pageId}">
+            ${actionChips}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="perm-table-container">
+      <table class="perm-table">
+        <thead>
+          <tr>
+            <th style="width: 25%;">Module / Page</th>
+            <th style="width: 28%;">Page Access</th>
+            <th style="width: 47%;">Granular Action Rights</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderUsers() {
   const canManage = can('users_manage') || isAdmin();
 
   const rows = people.map((person) => {
-    const isSelf = sessionUser?.id === person.id;
     const shortId = person.email.endsWith('@malda-ug.gov.in')
       ? person.email.replace('@malda-ug.gov.in', '')
       : person.email;
@@ -578,21 +661,43 @@ function renderUsers() {
     const editPages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'edit');
     const viewPages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'view');
     const nonePages = MODULE_PERMISSIONS.filter((m) => pageAccess(m.pageId, person) === 'none');
-    const activeActions = PERMISSION_DEFS.filter((d) => Boolean(perms[d.key])).length;
 
-    let badgesHtml = '';
+    let authSummaryHtml = '';
     if (person.role === 'Admin') {
-      badgesHtml = '<span class="badge ok" style="font-size: 11px;">👑 Full Admin (All Edit)</span>';
-    } else if (editPages.length === 0 && viewPages.length === 0) {
-      badgesHtml = '<span class="badge bad" style="font-size: 11px;">🚫 No Page Access</span>';
-    } else if (editPages.length === 0 && viewPages.length > 0) {
-      badgesHtml = `<span class="badge wait" style="font-size: 11px;">👁️ View Only (${viewPages.length} Pages)</span>`;
+      authSummaryHtml = '<span class="badge ok" style="font-size: 11px;">👑 Admin (Full Access)</span>';
     } else {
-      badgesHtml = `
-        <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-          <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700;">✏️ ${editPages.length} Edit</span>
-          ${viewPages.length > 0 ? `<span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600;">👁️ ${viewPages.length} View</span>` : ''}
-          ${nonePages.length > 0 ? `<span style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; padding: 1px 6px; font-size: 11px;">🚫 ${nonePages.length} Hidden</span>` : ''}
+      const tags = [];
+      if (perms.gtp_submit) tags.push('<span class="perm-tag tag-sub">📤 GTP Submit</span>');
+      if (perms.gtp_approve) tags.push('<span class="perm-tag tag-app">✅ GTP Approve</span>');
+      if (perms.di_offer) tags.push('<span class="perm-tag tag-sub">🔎 DI Offer</span>');
+      if (perms.di_issue) tags.push('<span class="perm-tag tag-app">🚚 DI Issue</span>');
+      if (perms.billing_submit) tags.push('<span class="perm-tag tag-sub">💵 Bill Submit</span>');
+      if (perms.billing_pay) tags.push('<span class="perm-tag tag-app">💳 Bill Pay</span>');
+      if (perms.daily_log) tags.push('<span class="perm-tag tag-sub">📝 DPR Log</span>');
+      if (perms.daily_verify) tags.push('<span class="perm-tag tag-app">✔️ DPR Verify</span>');
+      if (perms.survey_entry) tags.push('<span class="perm-tag tag-other">🗺️ Survey</span>');
+      if (perms.boq_edit) tags.push('<span class="perm-tag tag-other">📋 BOQ</span>');
+      if (perms.receive_record) tags.push('<span class="perm-tag tag-other">📦 Store</span>');
+
+      const tagPreview = tags.slice(0, 3).join(' ') + (tags.length > 3 ? ` <span class="meta" style="font-size:10px;">+${tags.length - 3}</span>` : '');
+
+      authSummaryHtml = `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span class="badge ${editPages.length ? 'ok' : 'idle'}" style="font-size: 10.5px;">✏️ ${editPages.length} Edit</span>
+              ${viewPages.length ? `<span class="badge idle" style="font-size: 10.5px;">👁️ ${viewPages.length} View</span>` : ''}
+              ${nonePages.length ? `<span class="badge bad" style="font-size: 10.5px;">🚫 ${nonePages.length} Off</span>` : ''}
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
+              ${tagPreview || '<span class="quiet" style="font-size: 11px;">View only</span>'}
+            </div>
+          </div>
+          ${canManage ? `
+            <button type="button" class="tiny strong" data-action="edit-user-perms" data-id="${esc(person.id)}" title="Configure selective Edit vs View and granular actions" style="white-space: nowrap; padding: 3px 8px; font-weight:700;">
+              ⚙️ Perms
+            </button>
+          ` : ''}
         </div>
       `;
     }
@@ -604,21 +709,12 @@ function renderUsers() {
           <span class="meta">ID: <code>${esc(shortId)}</code> (${esc(person.email)})</span>
         </td>
         <td>
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <div>${badgesHtml}</div>
-            ${canManage ? `
-              <div>
-                <button type="button" class="tiny primary" data-action="edit-user-perms" data-id="${esc(person.id)}" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 650; padding: 3px 9px;">
-                  <span>⚙️</span> Authorizations (${editPages.length} Edit · ${viewPages.length} View)
-                </button>
-              </div>
-            ` : ''}
-          </div>
-        </td>
-        <td>
           <select data-person="${esc(person.id)}" data-field="role" style="font-size: 12px; padding: 4px 6px;">
             ${['Admin', 'Division', 'Region', 'Vendor', 'Store', 'Viewer'].map((r) => `<option${r === person.role ? ' selected' : ''}>${r}</option>`).join('')}
           </select>
+        </td>
+        <td>
+          ${authSummaryHtml}
         </td>
         <td>
           <select data-person="${esc(person.id)}" data-field="active" style="font-size: 12px; padding: 4px 6px;">
@@ -639,103 +735,59 @@ function renderUsers() {
   });
 
   return `
-    ${head('People & User Authorizations', 'Create user accounts and configure selective Edit vs View authorizations for any page.')}
+    ${head('People & User Authorizations', 'Manage accounts and configure micro-level authorizations: grant create/submit vs approve rights independently.')}
 
-    <form class="auth-card" id="form-create-user" style="max-width: 100%; width: 100%; margin: 0 0 24px 0; box-shadow: none;">
-      <h2 style="margin: 0; font-size: 16px;">Create New User Account & Authorizations Matrix</h2>
-      <p style="margin-top: 2px; font-size: 12px; color: var(--muted);">Specify User ID, PIN, Name, and choose selective Edit vs View page access with action capabilities.</p>
-      
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px;">
-        <label>Full Name
-          <input name="name" type="text" required placeholder="e.g. Tarun Enterprise" />
-        </label>
-        <label>User ID or Email
-          <input name="userId" type="text" required placeholder="e.g. user01 or name@malda.com" />
-        </label>
-        <label>PIN / Password
-          <input name="pin" type="text" required placeholder="e.g. 1234 or pin123" />
-        </label>
-        <label>Role Preset
-          <select name="role" id="new-user-role" required style="padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);">
-            <option value="Division">Division (Survey & DPR)</option>
-            <option value="Region">Region (WBSEDCL DE)</option>
-            <option value="Vendor" selected>Vendor / Turnkey</option>
-            <option value="Store">Store Keeper</option>
-            <option value="Viewer">Viewer (Read Only)</option>
-            <option value="Admin">Admin (Full Access)</option>
-          </select>
-        </label>
-      </div>
-
-      <!-- Quick Preset & Module Matrix for New User Creation -->
-      <div style="margin-top: 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #f8fafc;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 12.5px; font-weight: 700; color: #1e293b;">
-            ⚙️ Selective Page Access (Edit / View Only / Hidden) & Actions:
-          </span>
-          <span style="font-size: 11px; color: #64748b;">Role preset auto-selects defaults; you can customize any page</span>
+    <div class="user-create-card">
+      <div class="user-create-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:16px;">👤</span>
+          <strong style="font-size:13.5px; color:#0f172a;">Create New User Account</strong>
+          <span class="meta" style="font-size:11px;">(Admin-assigned ID & PIN)</span>
         </div>
-        
-        <div class="perm-matrix-wrap" style="max-height: 42vh;">
-          ${MODULE_PERMISSIONS.map((mod) => {
-            const defaultMode = (ROLE_DEFAULT_PAGE_ACCESS.Vendor || {})[mod.pageId] || 'none';
-            const isEdit = defaultMode === 'edit';
-            const isView = defaultMode === 'view';
-            const isNone = defaultMode === 'none';
+        <button type="button" class="tiny ghost" data-action="toggle-create-matrix" id="btn-toggle-matrix" style="font-size:11px; padding: 3px 8px;">
+          ⚙️ Customize Permissions Matrix <span id="matrix-toggle-arrow">▼</span>
+        </button>
+      </div>
 
-            return `
-              <div class="perm-matrix-card mode-${defaultMode}" id="create-mod-card-${mod.pageId}">
-                <div class="perm-matrix-header" style="padding: 8px 12px;">
-                  <div class="perm-mod-info">
-                    <span class="perm-mod-icon" style="font-size: 18px;">${mod.icon}</span>
-                    <div>
-                      <div class="perm-mod-title" style="font-size: 12.5px;">${mod.label}</div>
-                    </div>
-                  </div>
-                  <div class="perm-seg-control">
-                    <label class="perm-seg-label seg-edit${isEdit ? ' active' : ''}">
-                      <input type="radio" name="page_${mod.pageId}" value="edit" ${isEdit ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
-                      <span>✏️ Edit</span>
-                    </label>
-                    <label class="perm-seg-label seg-view${isView ? ' active' : ''}">
-                      <input type="radio" name="page_${mod.pageId}" value="view" ${isView ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
-                      <span>👁️ View</span>
-                    </label>
-                    <label class="perm-seg-label seg-none${isNone ? ' active' : ''}">
-                      <input type="radio" name="page_${mod.pageId}" value="none" ${isNone ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
-                      <span>🚫 Hidden</span>
-                    </label>
-                  </div>
-                </div>
-                <div class="perm-actions-container${!isEdit ? ' locked' : ''}" id="create-actions-wrap-${mod.pageId}" style="padding: 6px 12px 8px;">
-                  <div class="perm-actions-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px;">
-                    ${mod.actions.map((act) => {
-                      const isDefaultChecked = Boolean(ROLE_DEFAULT_PERMISSIONS.Vendor[act.key]);
-                      return `
-                        <label class="perm-action-box${isDefaultChecked && isEdit ? ' checked' : ''}" style="padding: 5px 8px; font-size: 11.5px;">
-                          <input type="checkbox" name="perm_${act.key}" ${isDefaultChecked ? 'checked' : ''} class="perm-action-checkbox" data-page="${mod.pageId}" />
-                          <div>
-                            <div class="perm-action-title">${act.icon} ${act.label}</div>
-                          </div>
-                        </label>
-                      `;
-                    }).join('')}
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join('')}
+      <form id="form-create-user">
+        <div class="user-create-grid">
+          <label>Full Name
+            <input name="name" type="text" required placeholder="e.g. Tarun Enterprise" />
+          </label>
+          <label>User ID
+            <input name="userId" type="text" required placeholder="e.g. user01 or name@malda.com" />
+          </label>
+          <label>PIN / Password
+            <input name="pin" type="text" required placeholder="e.g. 1234 or pin123" />
+          </label>
+          <label>Role Template
+            <select name="role" id="new-user-role" required>
+              <option value="Vendor" selected>Vendor / Turnkey (Submit Only)</option>
+              <option value="Region">Region / Approver (Approve Only)</option>
+              <option value="Division">Division (Survey & DPR)</option>
+              <option value="Store">Store Keeper (Receipts)</option>
+              <option value="Viewer">Viewer (Read Only All)</option>
+              <option value="Admin">Admin (Full Control)</option>
+            </select>
+          </label>
         </div>
-      </div>
 
-      <p class="form-msg" style="margin-top: 8px;"></p>
-      <div style="margin-top: 10px; display: flex; gap: 8px;">
-        <button type="submit" class="primary" style="width: auto; padding: 8px 18px; font-weight: 700;">Create User Account</button>
-      </div>
-    </form>
+        <div id="create-matrix-container" style="display: none; margin-top: 10px;">
+          ${renderCompactPermTable('create', 'Vendor', true)}
+        </div>
 
-    <h2 style="font-size: 16px; margin: 16px 0 8px;">Existing User Accounts (${people.length})</h2>
-    ${table(['Name & User ID', 'Authorizations Matrix (Edit / View / Hidden)', 'Role Preset', 'Access Status', 'Actions'], rows, 5, 'No logins yet.')}
+        <div class="user-create-footer">
+          <button type="submit" class="primary" style="padding: 6px 16px; font-size: 12.5px; font-weight: 700;">+ Create Account</button>
+          <span class="form-msg" style="margin: 0; font-size: 12px;"></span>
+        </div>
+      </form>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 8px;">
+      <h2 style="font-size: 15px; margin: 0; color: #0f172a;">Existing User Accounts (${people.length})</h2>
+      <span class="meta" style="font-size: 11.5px;">Click "⚙️ Perms" to customize Edit/View access and specific action rights</span>
+    </div>
+    ${table(['User Account', 'Role Template', 'Authorizations & Micro-Actions', 'Status', 'Actions'], rows, 5, 'No logins yet.')}
   `;
 }
 
@@ -744,97 +796,31 @@ function userPermissionsModal(person) {
   const shortId = person.email.endsWith('@malda-ug.gov.in')
     ? person.email.replace('@malda-ug.gov.in', '')
     : person.email;
-  const currentPerms = getUserPermissions(person);
 
   return `
-    ${modalTitle('Custom User Authorizations Matrix', `Configure selective Edit vs View page access & action capabilities for ${esc(person.name)} (${esc(shortId)})`)}
+    ${modalTitle(`Authorizations: ${esc(person.name)}`, `User ID: ${esc(shortId)} · Role: ${esc(person.role || 'Vendor')} · Configure selective Edit vs View and granular capabilities.`)}
     
-    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin: 10px 0 14px;">
-      <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
-        Quick Apply Role Preset:
-      </div>
-      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Admin">👑 Full Admin</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Division">🗺️ Division (Survey & DPR)</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Region">🏢 Region (DE)</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Vendor">🚜 Turnkey / Vendor</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Store">📦 Store Keeper</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="Viewer" style="color: #0284c7; font-weight: 700;">👁️ View Only All</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="all" style="color: #2563eb; font-weight: 700;">Select All Edit</button>
-        <button type="button" class="tiny ghost" data-action="perm-preset" data-preset="none" style="color: #dc2626; font-weight: 700;">Clear All Access</button>
-      </div>
+    <div class="perm-preset-strip">
+      <span class="preset-label">Templates:</span>
+      <button type="button" class="preset-btn" data-action="perm-preset" data-preset="Vendor">🚜 Vendor (Submit Only)</button>
+      <button type="button" class="preset-btn" data-action="perm-preset" data-preset="Region">🏢 Approver (Approve Only)</button>
+      <button type="button" class="preset-btn" data-action="perm-preset" data-preset="Division">🗺️ Division (Survey & DPR)</button>
+      <button type="button" class="preset-btn" data-action="perm-preset" data-preset="Store">📦 Store</button>
+      <button type="button" class="preset-btn" data-action="perm-preset" data-preset="Viewer">👁️ View All</button>
+      <button type="button" class="preset-btn" data-action="perm-preset" data-preset="Admin">👑 Full Admin</button>
+      <button type="button" class="preset-btn preset-danger" data-action="perm-preset" data-preset="none">🚫 Clear</button>
     </div>
 
     <form class="entry entry-plain" id="form-user-permissions" data-id="${esc(person.id)}">
-      <div class="perm-matrix-wrap">
-        ${MODULE_PERMISSIONS.map((mod) => {
-          const pageMode = pageAccess(mod.pageId, person);
-          const isEdit = pageMode === 'edit';
-          const isView = pageMode === 'view';
-          const isNone = pageMode === 'none';
-
-          return `
-            <div class="perm-matrix-card mode-${pageMode}" id="mod-card-${mod.pageId}">
-              <div class="perm-matrix-header">
-                <div class="perm-mod-info">
-                  <span class="perm-mod-icon">${mod.icon}</span>
-                  <div>
-                    <div class="perm-mod-title">${mod.label}</div>
-                    <div class="perm-mod-desc">${mod.desc}</div>
-                  </div>
-                </div>
-
-                <!-- 3-Way Segmented Radio for Selective Edit / View / Hidden -->
-                <div class="perm-seg-control" data-page="${mod.pageId}">
-                  <label class="perm-seg-label seg-edit${isEdit ? ' active' : ''}" title="Full or selective editing and submissions on this page">
-                    <input type="radio" name="page_${mod.pageId}" value="edit" ${isEdit ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
-                    <span>✏️ Edit</span>
-                  </label>
-                  <label class="perm-seg-label seg-view${isView ? ' active' : ''}" title="Read-only view: can view and search this page, but cannot edit or submit">
-                    <input type="radio" name="page_${mod.pageId}" value="view" ${isView ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
-                    <span>👁️ View Only</span>
-                  </label>
-                  <label class="perm-seg-label seg-none${isNone ? ' active' : ''}" title="Hide this page completely from user navigation">
-                    <input type="radio" name="page_${mod.pageId}" value="none" ${isNone ? 'checked' : ''} class="perm-page-radio" data-page="${mod.pageId}" />
-                    <span>🚫 No Access</span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- Granular Action Checkboxes for this Module -->
-              <div class="perm-actions-container${!isEdit ? ' locked' : ''}" id="actions-wrap-${mod.pageId}">
-                <div class="perm-actions-bar">
-                  <span class="actions-status-text">
-                    ${isEdit ? '⚡ Action capabilities allowed during Edit access:' : (isView ? '👁️ Page set to View Only (Editing actions locked)' : '🚫 Page Hidden (No access)')}
-                  </span>
-                </div>
-                <div class="perm-actions-grid">
-                  ${mod.actions.map((act) => {
-                    const isChecked = Boolean(currentPerms[act.key]);
-                    return `
-                      <label class="perm-action-box${isChecked && isEdit ? ' checked' : ''}">
-                        <input type="checkbox" name="perm_${act.key}" ${isChecked ? 'checked' : ''} class="perm-action-checkbox" data-page="${mod.pageId}" />
-                        <div>
-                          <div class="perm-action-title">${act.icon} ${act.label}</div>
-                          <div class="perm-action-desc">${act.desc}</div>
-                        </div>
-                      </label>
-                    `;
-                  }).join('')}
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('')}
+      <div style="max-height: 52vh; overflow-y: auto;">
+        ${renderCompactPermTable('modal', person, false)}
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
-        <span style="font-size: 12px; color: #475569; font-weight: 600;" id="perm-matrix-summary">
-          <!-- Dynamic summary updated via JS -->
-        </span>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+        <span style="font-size: 11.5px; color: #475569;" id="perm-matrix-summary"></span>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="ghost" data-action="close-dialog">Cancel</button>
-          <button type="submit" class="primary" style="font-weight: 700; padding: 8px 22px;">Save Authorizations Matrix</button>
+          <button type="submit" class="primary" style="font-weight: 700; padding: 6px 18px; font-size: 12.5px;">Save Authorizations</button>
         </div>
       </div>
     </form>
@@ -862,7 +848,7 @@ function updatePermMatrixSummary(form) {
 
   const summaryEl = form.querySelector('#perm-matrix-summary');
   if (summaryEl) {
-    summaryEl.innerHTML = `<span style="color:#2563eb;">✏️ <strong>${editCount}</strong> Edit</span> &nbsp;·&nbsp; <span style="color:#0284c7;">👁️ <strong>${viewCount}</strong> View Only</span> &nbsp;·&nbsp; <span style="color:#e11d48;">🚫 <strong>${noneCount}</strong> Hidden</span> &nbsp;(${actCount} actions checked)`;
+    summaryEl.innerHTML = `<span style="color:#2563eb; font-weight:700;">✏️ ${editCount} Edit</span> · <span style="color:#0284c7; font-weight:700;">👁️ ${viewCount} View</span> · <span style="color:#e11d48; font-weight:700;">🚫 ${noneCount} Off</span> <span style="color:#64748b; font-weight:500;">(${actCount} actions active)</span>`;
   }
 }
 
@@ -885,35 +871,26 @@ function applyPermPreset(form, preset) {
     actionPerms = ROLE_DEFAULT_PERMISSIONS[preset] || ROLE_DEFAULT_PERMISSIONS.Viewer;
   }
 
-  // Update Page Radios
+  // Update Page Radios & Row styles
   MODULE_PERMISSIONS.forEach((m) => {
     const val = pageAccessMap[m.pageId] || 'none';
     const radio = form.querySelector(`input[name="page_${m.pageId}"][value="${val}"]`);
     if (radio) radio.checked = true;
 
-    const card = form.querySelector(`#mod-card-${m.pageId}`) || form.querySelector(`#create-mod-card-${m.pageId}`);
-    if (card) {
-      card.className = `perm-matrix-card mode-${val}`;
-      const segLabels = card.querySelectorAll('.perm-seg-label');
-      segLabels.forEach((lbl) => {
+    const row = form.querySelector(`[id$="-row-${m.pageId}"]`) || form.querySelector(`[id$="-card-${m.pageId}"]`);
+    if (row) {
+      row.className = row.tagName === 'TR' ? `perm-table-row mode-${val}` : `perm-matrix-card mode-${val}`;
+      const pillOpts = row.querySelectorAll('.pill-opt, .perm-seg-label');
+      pillOpts.forEach((lbl) => {
         const rad = lbl.querySelector('input');
         if (rad && rad.value === val) lbl.classList.add('active');
         else lbl.classList.remove('active');
       });
 
-      const wrap = card.querySelector(`#actions-wrap-${m.pageId}`) || card.querySelector(`#create-actions-wrap-${m.pageId}`);
+      const wrap = row.querySelector(`[id$="-actions-wrap-${m.pageId}"]`);
       if (wrap) {
-        const statusSpan = wrap.querySelector('.actions-status-text');
-        if (val === 'edit') {
-          wrap.classList.remove('locked');
-          if (statusSpan) statusSpan.textContent = '⚡ Action capabilities allowed during Edit access:';
-        } else if (val === 'view') {
-          wrap.classList.add('locked');
-          if (statusSpan) statusSpan.textContent = '👁️ Page set to View Only (Editing actions locked)';
-        } else {
-          wrap.classList.add('locked');
-          if (statusSpan) statusSpan.textContent = '🚫 Page Hidden (No access)';
-        }
+        if (val === 'edit') wrap.classList.remove('disabled', 'locked');
+        else wrap.classList.add(wrap.classList.contains('perm-actions-container') ? 'locked' : 'disabled');
       }
     }
   });
@@ -923,16 +900,17 @@ function applyPermPreset(form, preset) {
     const chk = form.querySelector(`input[name="perm_${d.key}"]`);
     if (chk) {
       chk.checked = Boolean(actionPerms[d.key]);
-      const box = chk.closest('.perm-action-box');
-      if (box) {
-        if (chk.checked) box.classList.add('checked');
-        else box.classList.remove('checked');
+      const chip = chk.closest('.perm-action-chip') || chk.closest('.perm-action-box');
+      if (chip) {
+        if (chk.checked) chip.classList.add(chip.classList.contains('perm-action-chip') ? 'on' : 'checked');
+        else chip.classList.remove('on', 'checked');
       }
     }
   });
 
   updatePermMatrixSummary(form);
 }
+
 
 function defaultContract() {
   return {
@@ -1299,7 +1277,7 @@ function renderBoqOverview(tabs) {
   const contract = contractData || defaultContract();
   const effTarget = effectiveTargetCompletionDate();
   const days = daysUntil(effTarget);
-  const canEdit = isRegion() || isAdmin();
+  const canEdit = (can('boq_edit') || isAdmin()) && canEditPage('boq');
 
   const bgs = contract.bgEntries || [];
   const activeBgs = bgs.filter((b) => b.status !== 'Released');
@@ -1620,7 +1598,7 @@ function renderBoqSurvey(tabs) {
   const contract = contractData || defaultContract();
   // Filter out any legacy dummy records to keep survey register strictly blank until user data entry
   const surveys = (contract.feederSurveys || []).filter((s) => !s.id || !s.id.startsWith('FS-0'));
-  const canEdit = isDivision() || isRegion() || isAdmin();
+  const canEdit = (can('survey_entry') || isAdmin()) && canEditPage('boq');
 
   const totalRouteLength = sum(surveys, (s) => Number(s.routeLength) || 0);
   const totalCable400 = sum(surveys, (s) => Number(s.cable400) || 0);
@@ -1816,10 +1794,11 @@ const GTP_WAITING = ['Submitted', 'Hold', 'Rejected'];
 
 function renderGtp() {
   const rows = boqItems.filter(isMaterial);
-  const canSubmit = isVendor() || isAdmin();
+  const canSubmit = can('gtp_submit') && canEditPage('gtp');
+  const canApprove = can('gtp_approve') && canEditPage('gtp');
   const groups = letterGroups();
   const stats = gtpStats(rows);
-  const hint = isRegion()
+  const hint = canApprove
     ? 'Review submissions, approve with memo reference, or open "By letter" to decide whole letters in bulk.'
     : 'Submit letters covering multiple materials. Choose GTP+Vendor, GTP only, or Vendor only.';
   const addBtn = isAdmin()
@@ -2008,8 +1987,8 @@ function miniStatus(record) {
 }
 
 function lettersTable(groups) {
-  const canDecide = isRegion() || isAdmin();
-  const canSubmit = isVendor() || isAdmin();
+  const canDecide = can('gtp_approve') && canEditPage('gtp');
+  const canSubmit = can('gtp_submit') && canEditPage('gtp');
   return table(['Kind', 'Letter no.', 'Submitted', 'Items covered', 'Status', ''], groups.map((group) => {
     const names = group.rows.map(({ item }) => materialName(item));
     const preview = names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2} more` : '');
@@ -2142,8 +2121,8 @@ function unifiedApprovalTable(rows, emptyMsg = 'No items found.', tab = gtpTab) 
 
     // Row Actions
     let actionBtn = '';
-    const canApprove = isRegion() || isAdmin();
-    const canSubmit = isVendor() || isAdmin();
+    const canApprove = can('gtp_approve') && canEditPage('gtp');
+    const canSubmit = can('gtp_submit') && canEditPage('gtp');
     const hasPendingInTab = records.some((r) => r.status === 'Submitted');
     const hasApprovedInTab = records.some((r) => r.status === 'Approved');
     if (canApprove && hasPendingInTab) {
@@ -2189,8 +2168,9 @@ function renderInspect() {
   const awaiting = inspectionOffers.filter((offer) => offer.status === 'Offered').length;
   const pendingDiItems = materials.filter((item) => pendingDiQty(item) > 0.0001).length;
   const groups = offerGroups();
-  const canOffer = isVendor() || isAdmin();
-  const hint = isRegion()
+  const canOffer = can('di_offer') && canEditPage('di');
+  const canDecide = can('di_issue') && canEditPage('di');
+  const hint = canDecide
     ? 'Open "By offer letter" to review and clear or forward all items under one memo, or click an individual offer.'
     : 'New inspection offer sends one reference letter covering multiple materials: fill the details once and enter quantities.';
   return `
@@ -2252,8 +2232,8 @@ function findOfferGroup(offerNo) {
 }
 
 function offerLettersTable(groups) {
-  const canDecide = isRegion() || isAdmin();
-  const canOffer = isVendor() || isAdmin();
+  const canDecide = can('di_issue') && canEditPage('di');
+  const canOffer = can('di_offer') && canEditPage('di');
   return table(['Offer letter', 'Date', 'Materials covered', 'Manufacturer & premises', 'Office', 'Status', ''], groups.map((group) => {
     const names = group.rows.map(({ item, offer }) => item ? materialName(item) : offer.itemName);
     const preview = names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2} more` : '');
@@ -2307,13 +2287,13 @@ function summaryTable(materials) {
     const stage = stageOf(item, track);
     const blob = itemOffers(item).map((offer) => `${offer.offerNo} ${offer.manufacturer} ${offer.status} ${offer.memoNo || ''}`).join(' ');
     const clickable = summaryClickable(item);
-    const offerBtn = (isVendor() || isAdmin()) && track.pendingOffer > 0.0001
+    const offerBtn = (can('di_offer') && canEditPage('di')) && track.pendingOffer > 0.0001
       ? `<button type="button" class="tiny" data-action="batch-insp-new" data-sl="${item.slNo}">Offer</button>`
       : '';
     const name = clickable
       ? `<button type="button" class="row-link" data-action="open-inspect" data-sl="${item.slNo}">${esc(materialName(item))}</button> ${offerBtn}`
       : `${esc(materialName(item))} ${offerBtn}`;
-    const canChangeOffice = isAdmin() || isRegion();
+    const canChangeOffice = isAdmin() || (can('di_issue') && canEditPage('di'));
     const officeCell = canChangeOffice
       ? `<button type="button" class="class-toggle-btn ${track.className === 'Local' ? 'local' : 'central'}" data-action="toggle-class" data-sl="${item.slNo}" title="Click to toggle Office: currently ${track.className === 'Local' ? 'Local (RM/ZM)' : 'Central (HQ/ZM)'}">${track.className} <span class="toggle-icon">⇄</span></button>`
       : classBadge(track.className);
@@ -2336,8 +2316,8 @@ function summaryTable(materials) {
 }
 
 function summaryClickable(item) {
-  if (isVendor() || isAdmin()) return true;
-  if (isRegion()) {
+  if (can('di_offer') && canEditPage('di')) return true;
+  if (can('di_issue') && canEditPage('di')) {
     return itemOffers(item).some((offer) => offer.status === 'Offered' || offer.status === 'Cleared' || offer.status === 'Forwarded');
   }
   return false;
@@ -2392,8 +2372,8 @@ function offerDiQty(offer) {
 function openInspect(sl, offerId) {
   const item = findItem(sl);
   if (!item || !isMaterial(item)) return;
-  const canOffer = isVendor() || isAdmin();
-  const canAct = isRegion() || isAdmin();
+  const canOffer = can('di_offer') && canEditPage('di');
+  const canAct = can('di_issue') && canEditPage('di');
   const offers = itemOffers(item);
   const offer = offerId ? offers.find((row) => row.id === offerId) : null;
   const waiting = offers.filter((row) => row.status === 'Offered');
@@ -2404,7 +2384,7 @@ function openInspect(sl, offerId) {
     if (canAct && offer.status === 'Offered') mode = 'approve';
     else if (canAct && (offer.status === 'Cleared' || offer.status === 'Forwarded')) mode = 'di';
     else mode = 'note';
-  } else if (canAct && isRegion()) {
+  } else if (canAct) {
     if (waiting.length) { mode = 'approve'; id = waiting[0].id; }
     else if (ready.length) { mode = 'di'; id = ready[0].id; }
   } else if (user.role === 'Admin') {
@@ -2596,8 +2576,8 @@ function inspLetterModal() {
   const group = findOfferGroup(inspModal.offerNo);
   if (inspModal?.mode === 'editOfferLetter') return inspEditOfferModal(group);
   if (!group) return `${modalTitle('Offer letter not found', 'It may have been modified or deleted.')}`;
-  const canDecide = (isRegion() || isAdmin()) && group.waiting > 0;
-  const canOffer = isVendor() || isAdmin();
+  const canDecide = can('di_issue') && canEditPage('di') && group.waiting > 0;
+  const canOffer = can('di_offer') && canEditPage('di');
   const sub = `Submitted: ${group.date ? isoToDmy(group.date) : '—'} · ${esc(group.manufacturer)} (${esc(group.premises)}) · ${group.rows.length} ${group.rows.length === 1 ? 'material' : 'materials'}`;
   const adminActions = isAdmin()
     ? `<div class="actions" style="margin-top: 12px; display: flex; gap: 8px;">
@@ -2682,7 +2662,7 @@ function inspEditOfferModal(group) {
 }
 
 function inspLetterSummary(group) {
-  const canAct = isRegion() || isAdmin();
+  const canAct = (can('di_issue') || isAdmin()) && canEditPage('di');
   return table(['Sl', 'Material', 'Office', numHead('Offered Qty'), 'Status', 'Decision memo', 'Action'], group.rows.map(({ item, offer }) => {
     const isReadyForDi = (offer.status === 'Cleared' || offer.status === 'Forwarded') && offerRemain(offer) > 0.0001;
     const diBtn = canAct && isReadyForDi
@@ -2758,7 +2738,7 @@ function inspLetterDecisionForm(group) {
 
 function inspectModal(item) {
   const track = supplyTrack(item);
-  const canAct = isRegion() || isAdmin();
+  const canAct = (can('di_issue') || isAdmin()) && canEditPage('di');
   return `
     <div class="modal-head">
       <div>
@@ -2920,7 +2900,7 @@ function openEntry(sl, id, mode) {
 }
 
 function prepareGtp(sl, id, mode) {
-  if (mode === 'new' && (isAdmin() || isVendor())) {
+  if (mode === 'new' && (isAdmin() || (can('gtp_submit') && canEditPage('gtp')))) {
     entryModal = { page: 'gtp', sl: 0, id: '', mode: 'newMaterial' };
     return;
   }
@@ -2934,8 +2914,8 @@ function prepareGtp(sl, id, mode) {
   const waiting = Boolean(waitingRecord);
   const hasPending = records.some((r) => r.status === 'Submitted');
   const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(id) ? id : (waitingRecord?.kind || records[records.length - 1]?.kind || 'gtp_vendor');
-  const canApprove = isRegion() || isAdmin();
-  const canSubmit = isVendor() || isAdmin();
+  const canApprove = can('gtp_approve') && canEditPage('gtp');
+  const canSubmit = can('gtp_submit') && canEditPage('gtp');
 
   let modalMode = 'note';
   if (mode === 'decision' && canApprove) {
@@ -2944,9 +2924,9 @@ function prepareGtp(sl, id, mode) {
     const record = approvalRecord(item, kind);
     entryModal = batchEntry({ kind, picked: [item.slNo], letterNo: record.status === 'Rejected' ? '' : record.letterNo, vendor: record.vendor || '' });
     return;
-  } else if (canApprove && !isVendor() && hasPending) {
+  } else if (canApprove && !canSubmit && hasPending) {
     modalMode = 'decision';
-  } else if (isVendor() && !waiting && itemApprovalStatus(item) !== 'approved') {
+  } else if (canSubmit && !waiting && itemApprovalStatus(item) !== 'approved') {
     const record = approvalRecord(item, kind);
     entryModal = batchEntry({ kind, picked: [item.slNo], letterNo: record.status === 'Rejected' ? '' : record.letterNo, vendor: record.vendor || '' });
     return;
@@ -2968,7 +2948,7 @@ function batchEntry(draft = {}) {
 
 function prepareBill(id, mode) {
   if (mode === 'new') {
-    if (!isVendor() && !isAdmin()) return;
+    if (!can('billing_submit') || !canEditPage('billing')) return;
     const type = billTab === 'erection' ? 'Erection' : 'Supply';
     entryModal = {
       page: 'billing',
@@ -2981,18 +2961,18 @@ function prepareBill(id, mode) {
     return;
   }
   const invoice = invoices.find((row) => row.id === id);
-  const canPay = (isRegion() || isAdmin()) && invoice && invoice.payStatus !== 'Paid';
+  const canPay = can('billing_pay') && canEditPage('billing') && invoice && invoice.payStatus !== 'Paid';
   entryModal = invoice ? { page: 'billing', sl: 0, id, mode: canPay ? 'pay' : 'note' } : null;
 }
 
 function prepareDaily(sl, id) {
   if (id) {
     const log = dailyLogs.find((row) => row.id === id);
-    const canVerify = (isRegion() || isAdmin()) && log && log.approvalStatus !== 'Approved';
+    const canVerify = can('daily_verify') && canEditPage('daily') && log && log.approvalStatus !== 'Approved';
     entryModal = log ? { page: 'daily', sl: log.itemSl, id, mode: canVerify ? 'verify' : 'note' } : null;
     return;
   }
-  const canLog = isVendor() || isAdmin();
+  const canLog = can('daily_log') && canEditPage('daily');
   entryModal = findItem(sl) ? { page: 'daily', sl, id: '', mode: canLog ? 'log' : 'note' } : null;
 }
 
@@ -3001,7 +2981,7 @@ function prepareReceive(sl, id) {
     entryModal = { page: 'receive', sl, id, mode: 'note' };
     return;
   }
-  const canReceive = isStore() || isAdmin();
+  const canReceive = can('receive_record') && canEditPage('receive');
   entryModal = findItem(sl) ? { page: 'receive', sl, id: '', mode: canReceive ? 'srv' : 'note' } : null;
 }
 
@@ -3366,8 +3346,8 @@ function gtpModal() {
   const sub = `${label} · LOA ${qtyText(item.loaQty, item.unit)} · Survey ${surveyText(item)}`;
   let body = gtpNotes(records, item, kind);
   if (entryModal.mode === 'decision') body = gtpDecisionForm(item, kind);
-  const canSubmit = isVendor() || isAdmin();
-  const canDecide = isRegion() || isAdmin();
+  const canSubmit = can('gtp_submit') && canEditPage('gtp');
+  const canDecide = can('gtp_approve') && canEditPage('gtp');
   return `
     ${modalTitle(`Sl ${item.slNo} · ${esc(materialName(item))}`, sub)}
     ${body}
@@ -3490,8 +3470,8 @@ function gtpLetterModal() {
   const group = findGroup(entryModal.id);
   if (entryModal?.mode === 'rectifyLetter') return gtpRectifyLetterModal(group);
   if (!group) return `${modalTitle('Letter not found', 'It may have been re-submitted under a new reference.')}`;
-  const canDecide = (isRegion() || isAdmin()) && group.pending > 0;
-  const canSubmit = isVendor() || isAdmin();
+  const canDecide = can('gtp_approve') && canEditPage('gtp') && group.pending > 0;
+  const canSubmit = can('gtp_submit') && canEditPage('gtp');
   const sub = `${kindLabel(group.kind)} · Submitted ${group.subDate ? isoToDmy(group.subDate) : '—'} · ${group.rows.length} ${group.rows.length === 1 ? 'material' : 'materials'}`;
   const canDeleteLetter = isAdmin() && group.rows.every(({ record }) => record.status !== 'Approved');
   const canResetLetter = isAdmin() && group.rows.some(({ record }) => record.status === 'Approved' || record.status === 'Rejected' || record.status === 'Hold');
@@ -4040,7 +4020,7 @@ function dailyModal() {
     if (!log) return '';
     const isPending = log.approvalStatus !== 'Approved';
     const sub = `Sl ${log.itemSl} · ${esc(log.feeder)} · ${qtyText(log.executedQty, log.unit)} · ${esc(log.siteEngineer || '')}`;
-    const canVerify = (isRegion() || isAdmin()) && isPending;
+    const canVerify = (can('daily_verify') || isAdmin()) && canEditPage('daily') && isPending;
     return `
       ${modalTitle(`Daily Log · ${esc(log.date)}`, sub)}
       <div style="background: rgba(0,0,0,0.03); padding: 0.85rem; border-radius: 6px; margin-bottom: 0.85rem;" class="span-all">
@@ -4142,10 +4122,10 @@ function renderReceive() {
 
 function renderBilling() {
   const type = billTab === 'erection' ? 'Erection' : 'Supply';
-  const hint = isRegion()
-    ? 'Click a claimed invoice to mark it paid.'
+  const hint = (can('billing_pay') && canEditPage('billing'))
+    ? 'Click a claimed invoice to verify and mark it paid.'
     : `Raise the ${type.toLowerCase()} invoice from this tab. One invoice can hold many items. Payment follows the invoice.`;
-  const canRaise = isVendor() || isAdmin();
+  const canRaise = can('billing_submit') && canEditPage('billing');
   return `
     ${head('Vendor billing', hint)}
     <div class="tab-row">
@@ -4188,7 +4168,7 @@ function renderDaily() {
     ['activities', `Site Activities (${siteActivities.length})`],
     ['pending', pendingLabel]
   ];
-  let hint = (isRegion() || isAdmin())
+  let hint = (can('daily_verify') && canEditPage('daily'))
     ? 'Verify pending daily progress entries submitted by vendors to count them into executed progress.'
     : 'Select Supply or Erection item to enter today\'s site progress quantity for Region approval.';
   if (dailyTab === 'activities') {
@@ -4216,7 +4196,7 @@ function renderDaily() {
 }
 
 function dailyActivitiesTable() {
-  const canLogActivity = isVendor() || isAdmin();
+  const canLogActivity = can('daily_log') && canEditPage('daily');
   const topActions = `
     <div class="actions" style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px;">
       <span class="meta">${siteActivities.length} ${siteActivities.length === 1 ? 'activity record' : 'activity records'}</span>
@@ -4269,7 +4249,7 @@ function activityBadge(type) {
 
 function dailyItems(partFilter) {
   const items = boqItems.filter((item) => partFilter ? item.part === partFilter : true);
-  const enter = (isVendor() || isAdmin())
+  const enter = (can('daily_log') && canEditPage('daily'))
     ? (item) => `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}">Enter Qty</button>`
     : () => '';
 
@@ -4302,7 +4282,7 @@ function dailyLogTable(pendingOnly) {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   return table(['Date', 'Feeder / Location', 'Item Description', numHead('Entered Qty'), 'Entered By', 'Verification Status', 'Action'], rows.map((log) => {
     const isPending = log.approvalStatus !== 'Approved';
-    const verifyBtn = (isRegion() || isAdmin()) && isPending
+    const verifyBtn = (can('daily_verify') && canEditPage('daily')) && isPending
       ? `<button type="button" class="tiny primary" data-action="open-entry" data-id="${esc(log.id)}" data-sl="${log.itemSl}">Verify</button>`
       : '';
     return `
@@ -4384,7 +4364,7 @@ function onClick(event) {
     return;
   }
   if (action === 'batch-insp-new') {
-    if (!isVendor() && !isAdmin()) return;
+    if (!can('di_offer') || !canEditPage('di')) return;
     const sl = Number(button.dataset.sl) || 0;
     entryModal = null;
     inspModal = batchInspEntry({
@@ -4491,7 +4471,7 @@ function onClick(event) {
     return;
   }
   if (action === 'batch-new') {
-    if (!isVendor() && !isAdmin()) return;
+    if (!can('gtp_submit') || !canEditPage('gtp')) return;
     const sl = Number(button.dataset.sl) || 0;
     inspModal = null;
     entryModal = batchEntry({
@@ -4606,13 +4586,32 @@ function onClick(event) {
     confirmSaveGtpBatch();
     return;
   }
-  if (action === 'pay-bill') markBillPaid(button.dataset.id);
-  if (action === 'verify-log') verifyLog(button.dataset.id);
+  if (action === 'toggle-create-matrix') {
+    const container = document.getElementById('create-matrix-container');
+    const arrow = document.getElementById('matrix-toggle-arrow');
+    const btn = document.getElementById('btn-toggle-matrix');
+    if (container) {
+      const isHidden = container.style.display === 'none';
+      container.style.display = isHidden ? 'block' : 'none';
+      if (arrow) arrow.textContent = isHidden ? '▲' : '▼';
+      if (btn) btn.innerHTML = isHidden ? 'Hide Permissions Matrix <span id="matrix-toggle-arrow">▲</span>' : '⚙️ Customize Permissions Matrix <span id="matrix-toggle-arrow">▼</span>';
+    }
+    return;
+  }
+  if (action === 'pay-bill') {
+    if (can('billing_pay') && canEditPage('billing')) markBillPaid(button.dataset.id);
+    else toast('Not authorized to verify or pay invoices');
+  }
+  if (action === 'verify-log') {
+    if (can('daily_verify') && canEditPage('daily')) verifyLog(button.dataset.id);
+    else toast('Not authorized to verify daily progress');
+  }
   if (action === 'delete-boq') deleteBoq(Number(button.dataset.sl));
   if (action === 'delete-approval') deleteApproval(Number(button.dataset.sl), button.dataset.kind, button.dataset.letter);
   if (action === 'delete-approval-letter') deleteApprovalLetter(button.dataset.kind, button.dataset.letter);
   if (action === 'delete-invoice') deleteInvoice(button.dataset.id);
   if (action === 'activity-new') {
+    if (!can('daily_log') || !canEditPage('daily')) return;
     inspModal = null;
     entryModal = { page: 'daily', sl: 0, id: '', mode: 'newActivity' };
     inspectOpenedAt = Date.now();
@@ -4631,21 +4630,21 @@ function onClick(event) {
     return;
   }
   if (action === 'contract-edit-milestones') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     entryModal = { page: 'contract', mode: 'milestones' };
     inspectOpenedAt = Date.now();
     paint();
     return;
   }
   if (action === 'contract-add-bg') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     entryModal = { page: 'contract', mode: 'bg', idx: null };
     inspectOpenedAt = Date.now();
     paint();
     return;
   }
   if (action === 'contract-edit-bg') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     const idx = Number(button.dataset.idx);
     entryModal = { page: 'contract', mode: 'bg', idx };
     inspectOpenedAt = Date.now();
@@ -4653,19 +4652,19 @@ function onClick(event) {
     return;
   }
   if (action === 'contract-delete-bg') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     deleteContractBg(Number(button.dataset.idx));
     return;
   }
   if (action === 'contract-add-eot') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     entryModal = { page: 'contract', mode: 'eot', idx: null };
     inspectOpenedAt = Date.now();
     paint();
     return;
   }
   if (action === 'contract-edit-eot') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     const idx = Number(button.dataset.idx);
     entryModal = { page: 'contract', mode: 'eot', idx };
     inspectOpenedAt = Date.now();
@@ -4673,19 +4672,19 @@ function onClick(event) {
     return;
   }
   if (action === 'contract-delete-eot') {
-    if (!isRegion() && !isAdmin()) return;
+    if (!can('boq_edit') || !canEditPage('boq')) return;
     deleteContractEot(Number(button.dataset.idx));
     return;
   }
   if (action === 'survey-add-feeder') {
-    if (!isDivision() && !isRegion() && !isAdmin()) return;
+    if (!can('survey_entry') || !canEditPage('boq')) return;
     entryModal = { page: 'contract', mode: 'feederSurvey', idx: -1 };
     inspectOpenedAt = Date.now();
     paint();
     return;
   }
   if (action === 'survey-edit-feeder') {
-    if (!isDivision() && !isRegion() && !isAdmin()) return;
+    if (!can('survey_entry') || !canEditPage('boq')) return;
     const idx = Number(button.dataset.idx);
     entryModal = { page: 'contract', mode: 'feederSurvey', idx };
     inspectOpenedAt = Date.now();
@@ -4693,7 +4692,7 @@ function onClick(event) {
     return;
   }
   if (action === 'survey-delete-feeder') {
-    if (!isDivision() && !isRegion() && !isAdmin()) return;
+    if (!can('survey_entry') || !canEditPage('boq')) return;
     const idx = Number(button.dataset.idx);
     deleteFeederSurvey(idx);
     return;
@@ -5495,7 +5494,9 @@ async function deleteInvoice(id) {
 }
 
 async function saveGtpBatch(form) {
-  if (!isVendor() && !isAdmin()) return;
+  if (!can('gtp_submit') || !canEditPage('gtp')) {
+    return setMsg(form, 'You are not authorized to create or submit GTP/Vendor approval letters.');
+  }
   const draft = readBatchDraft(form);
   const kinds = batchKinds(draft.kind);
   if (!draft.letterNo || !draft.date) return setMsg(form, 'Enter the letter number and letter date.');
@@ -5547,6 +5548,10 @@ async function saveGtpBatch(form) {
 
 async function confirmSaveGtpBatch() {
   if (!entryModal?.draft?.payloads) return;
+  if (!can('gtp_submit') || !canEditPage('gtp')) {
+    toast('You are not authorized to create or submit GTP/Vendor approval letters.');
+    return;
+  }
   const draft = entryModal.draft;
   const payloads = draft.payloads;
   try {
@@ -5564,7 +5569,9 @@ async function confirmSaveGtpBatch() {
 }
 
 async function saveDecisionBatch(form) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('gtp_approve') || !canEditPage('gtp')) {
+    return setMsg(form, 'You are not authorized to approve or reject letters.');
+  }
   const group = findGroup(field(form, 'group'));
   if (!group) return setMsg(form, 'Letter not found.');
   const memoNo = field(form, 'memoNo');
@@ -5679,7 +5686,9 @@ function updateInspDecisionCount(form) {
 }
 
 async function saveInspBatch(form) {
-  if (!isVendor() && !isAdmin()) return;
+  if (!can('di_offer') || !canEditPage('di')) {
+    return setMsg(form, 'You are not authorized to submit inspection offers.');
+  }
   const draft = readInspBatchDraft(form);
   if (!draft.offerNo || !draft.date || !draft.manufacturer || !draft.premises) {
     return setMsg(form, 'Enter the offer letter number, date, manufacturer, and premises.');
@@ -5743,7 +5752,9 @@ async function saveInspBatch(form) {
 }
 
 async function saveInspDecisionBatch(form) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('di_issue') || !canEditPage('di')) {
+    return setMsg(form, 'You are not authorized to issue DI or inspection decisions.');
+  }
   const group = findOfferGroup(field(form, 'offerNo'));
   if (!group) return setMsg(form, 'Offer letter not found.');
   const memoNo = field(form, 'memoNo');
@@ -5801,7 +5812,9 @@ function pickDecision(button) {
 }
 
 async function saveDecision(form) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('gtp_approve') || !canEditPage('gtp')) {
+    return setMsg(form, 'You are not authorized to approve or reject letters.');
+  }
   const kind = ['gtp', 'vendor', 'gtp_vendor'].includes(field(form, 'kind')) ? field(form, 'kind') : 'gtp_vendor';
   const item = findItem(field(form, 'item'));
   if (!item) return setMsg(form, 'Select a valid item.');
@@ -5852,8 +5865,8 @@ async function saveDecision(form) {
 }
 
 async function saveOffer(form) {
-  if (!isVendor() && !isRegion() && !isAdmin()) {
-    return setMsg(form, 'Switch the role to Vendor, Region, or Admin to save an offer.');
+  if (!can('di_offer') || !canEditPage('di')) {
+    return setMsg(form, 'You are not authorized to submit inspection offers.');
   }
   const item = findItem(field(form, 'item'));
   if (!item || !isMaterial(item)) return setMsg(form, 'Select a material item.');
@@ -5898,8 +5911,8 @@ async function saveOffer(form) {
 }
 
 async function saveOfferAction(form) {
-  if (!isRegion() && !isAdmin()) {
-    return setMsg(form, 'Switch the role to Region or Admin to clear, reject, or forward an offer.');
+  if (!can('di_issue') || !canEditPage('di')) {
+    return setMsg(form, 'You are not authorized to clear, reject, or forward inspection offers.');
   }
   const offer = inspectionOffers.find((row) => row.id === field(form, 'offer'));
   const decision = field(form, 'decision');
@@ -5952,8 +5965,8 @@ function syncOfferAction(form) {
 }
 
 async function saveDi(form) {
-  if (!isRegion() && !isAdmin()) {
-    return setMsg(form, 'Switch the role to Region or Admin to issue a DI.');
+  if (!can('di_issue') || !canEditPage('di')) {
+    return setMsg(form, 'You are not authorized to issue a DI.');
   }
   const offer = inspectionOffers.find((row) => row.id === field(form, 'offer'));
   const item = offer ? findItem(offer.itemSl) : null;
@@ -5992,7 +6005,10 @@ async function saveDi(form) {
 }
 
 async function setSupplyClass(slNo, className) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('di_issue') || !canEditPage('di')) {
+    toast('Not authorized to change office classification.');
+    return;
+  }
   const item = findItem(slNo);
   if (!item || (className !== 'Local' && className !== 'Central')) return;
   try {
@@ -6007,7 +6023,9 @@ async function setSupplyClass(slNo, className) {
 }
 
 async function saveReceipt(form) {
-  if (!isStore() && !isAdmin()) return;
+  if (!can('receive_record') || !canEditPage('receive')) {
+    return setMsg(form, 'You are not authorized to record material receipts.');
+  }
   const item = findItem(field(form, 'item'));
   if (!item || !isMaterial(item)) return setMsg(form, 'Select a material item.');
   const cleared = diQty(item);
@@ -6045,7 +6063,9 @@ async function saveReceipt(form) {
 }
 
 async function saveInvoice(form) {
-  if (!isVendor() && !isAdmin()) return;
+  if (!can('billing_submit') || !canEditPage('billing')) {
+    return setMsg(form, 'You are not authorized to submit invoices.');
+  }
   const type = field(form, 'type') === 'Erection' ? 'Erection' : 'Supply';
   const invoiceNo = field(form, 'invoiceNo');
   const date = field(form, 'date');
@@ -6099,7 +6119,10 @@ async function saveInvoice(form) {
 }
 
 async function markBillPaid(id) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('billing_pay') || !canEditPage('billing')) {
+    toast('You are not authorized to process or mark bills as paid.');
+    return;
+  }
   const invoice = invoices.find((row) => row.id === id);
   if (!invoice) return;
   try {
@@ -6115,7 +6138,9 @@ async function markBillPaid(id) {
 }
 
 async function saveDaily(form) {
-  if (!isVendor() && !isAdmin()) return;
+  if (!can('daily_log') || !canEditPage('daily')) {
+    return setMsg(form, 'You are not authorized to log daily progress.');
+  }
   const item = findItem(field(form, 'item'));
   if (!item) return setMsg(form, 'Select an item.');
   const qty = Number(field(form, 'qty'));
@@ -6149,7 +6174,9 @@ async function saveDaily(form) {
 }
 
 async function saveSiteActivity(form) {
-  if (!isVendor() && !isAdmin()) return;
+  if (!can('daily_log') || !canEditPage('daily')) {
+    return setMsg(form, 'You are not authorized to record site activities.');
+  }
   const date = field(form, 'date');
   const activityType = field(form, 'activityType');
   const customType = field(form, 'customType');
@@ -6205,7 +6232,9 @@ async function deleteSiteActivity(id) {
 }
 
 async function saveContractMilestones(form) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('boq_edit') || !canEditPage('boq')) {
+    return setMsg(form, 'You are not authorized to edit contract milestones.');
+  }
   const contract = { ...(contractData || defaultContract()) };
   contract.loaNo = field(form, 'loaNo');
   contract.loaDate = field(form, 'loaDate') || null;
@@ -6234,7 +6263,9 @@ async function saveContractMilestones(form) {
 }
 
 async function saveContractBg(form) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('boq_edit') || !canEditPage('boq')) {
+    return setMsg(form, 'You are not authorized to edit Bank Guarantees.');
+  }
   const idx = Number(field(form, 'idx'));
   const contract = { ...(contractData || defaultContract()) };
   const list = [...(contract.bgEntries || [])];
@@ -6281,7 +6312,10 @@ async function saveContractBg(form) {
 }
 
 async function deleteContractBg(idx) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('boq_edit') || !canEditPage('boq')) {
+    toast('Not authorized to delete Bank Guarantees.');
+    return;
+  }
   const contract = { ...(contractData || defaultContract()) };
   const list = [...(contract.bgEntries || [])];
   const bg = list[idx];
@@ -6301,7 +6335,9 @@ async function deleteContractBg(idx) {
 }
 
 async function saveContractEot(form) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('boq_edit') || !canEditPage('boq')) {
+    return setMsg(form, 'You are not authorized to edit Time Extensions.');
+  }
   const idx = Number(field(form, 'idx'));
   const contract = { ...(contractData || defaultContract()) };
   const list = [...(contract.eotEntries || [])];
@@ -6345,7 +6381,10 @@ async function saveContractEot(form) {
 }
 
 async function deleteContractEot(idx) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('boq_edit') || !canEditPage('boq')) {
+    toast('Not authorized to delete Time Extensions.');
+    return;
+  }
   const contract = { ...(contractData || defaultContract()) };
   const list = [...(contract.eotEntries || [])];
   const eot = list[idx];
@@ -6365,7 +6404,9 @@ async function deleteContractEot(idx) {
 }
 
 async function saveFeederSurvey(form) {
-  if (!isDivision() && !isRegion() && !isAdmin()) return;
+  if (!can('survey_entry') || !canEditPage('boq')) {
+    return setMsg(form, 'You are not authorized to edit feeder surveys.');
+  }
   const idx = Number(field(form, 'idx'));
   const contract = { ...(contractData || defaultContract()) };
   const list = [...(contract.feederSurveys || [])];
@@ -6464,7 +6505,10 @@ async function saveFeederSurvey(form) {
 }
 
 async function deleteFeederSurvey(idx) {
-  if (!isDivision() && !isRegion() && !isAdmin()) return;
+  if (!can('survey_entry') || !canEditPage('boq')) {
+    toast('Not authorized to delete feeder surveys.');
+    return;
+  }
   const contract = { ...(contractData || defaultContract()) };
   const list = [...(contract.feederSurveys || [])];
   const s = list[idx];
@@ -6484,7 +6528,10 @@ async function deleteFeederSurvey(idx) {
 }
 
 async function verifyLog(id) {
-  if (!isRegion() && !isAdmin()) return;
+  if (!can('daily_verify') || !canEditPage('daily')) {
+    toast('You are not authorized to verify daily progress logs.');
+    return;
+  }
   const log = dailyLogs.find((row) => row.id === id);
   if (!log || log.approvalStatus === 'Approved') return;
   const inspector = user.name || user.role || 'WBSEDCL';
@@ -6583,7 +6630,7 @@ function approvalRecord(item, kind) {
 }
 
 function submitAction(item, kind, record, label) {
-  if (!isVendor() && !isAdmin()) return '';
+  if (!can('gtp_submit') || !canEditPage('gtp')) return '';
   return `<button type="button" class="tiny" data-action="open-entry" data-sl="${item.slNo}" data-id="${kind}" data-mode="submit">${esc(label)}</button>`;
 }
 
